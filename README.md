@@ -1,75 +1,57 @@
-# Nuxt Minimal Starter
+# frontend-merchant-store
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+Admin panel frontend for [golang-backend-platform](https://github.com/riolentius/golang-backend-platform) — a production-oriented backend built with Golang + PostgreSQL.
 
-## Setup
+---
 
-Make sure to install dependencies:
+## Tech Stack
+
+- **Nuxt 3** — Vue framework with `app/` directory convention
+- **PrimeVue** — UI components with Aura theme
+- **TypeScript** — throughout
+- **Cookie-based JWT auth** — SSR-safe via `useCookie()`
+
+## Getting Started
 
 ```bash
-# npm
+# Install dependencies
 npm install
 
-# pnpm
-pnpm install
+# Copy environment file
+cp .env.example .env
 
-# yarn
-yarn install
-
-# bun
-bun install
-```
-
-## Development Server
-
-Start the development server on `http://localhost:3000`:
-
-```bash
-# npm
+# Start dev server
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
 ```
 
-## Production
+The app runs at `http://localhost:3000`. Make sure the backend is running at `http://localhost:8080`.
 
-Build the application for production:
+## Mock Mode
 
-```bash
-# npm
-npm run build
+The frontend includes a mock data layer for UI development without a running backend. Toggle it in:
 
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
+```ts
+// app/mocks/config.ts
+export const USE_MOCK = true; // set to false to use real API
 ```
 
-Locally preview production build:
+Mock credentials: `admin` / `admin123`
 
-```bash
-# npm
-npm run preview
+## Project Structure
 
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
+```
+app/
+├── assets/css/       # Global stylesheets
+├── components/       # Reusable UI components
+├── composables/      # useAuth, useDashboard
+├── layouts/          # dashboard, auth
+├── middleware/       # auth.global.ts (route guard)
+├── mocks/            # Mock data for UI development
+├── pages/            # admin/, auth/
+└── plugins/          # $api plugin with Bearer token injection
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## Backend
+
+This project is the frontend for:
+**[riolentius/golang-backend-platform](https://github.com/riolentius/golang-backend-platform)**

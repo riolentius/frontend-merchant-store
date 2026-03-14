@@ -1,0 +1,343 @@
+/* ============================================================
+   dashboard-page.css — Dashboard page component styles
+   Import in: nuxt.config.ts → css array
+   ============================================================ */
+
+/* ─────────────────────────────────────── Root */
+.dash-root {
+  font-family: 'Geist', -apple-system, sans-serif;
+  padding: 28px 32px;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  color: #0f172a;
+}
+
+/* ─────────────────────────────────────── Page Header */
+.dash-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dash-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+  margin: 0 0 3px;
+}
+
+.dash-sub {
+  font-size: 13.5px;
+  color: #64748b;
+  margin: 0;
+}
+
+.dash-date {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: #94a3b8;
+  padding-top: 4px;
+  text-transform: capitalize;
+}
+
+/* ─────────────────────────────────────── Stat Cards */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.stat-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.stat-skeleton {
+  height: 120px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border: none;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stat-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-icon--blue  { background: #eff6ff; color: #2563eb; }
+.stat-icon--green { background: #f0fdf4; color: #16a34a; }
+.stat-icon--amber { background: #fffbeb; color: #d97706; }
+.stat-icon--red   { background: #fef2f2; color: #dc2626; }
+.stat-icon--slate { background: #f8fafc; color: #475569; }
+
+.stat-trend {
+  font-size: 11.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 99px;
+}
+
+.trend-up      { background: #f0fdf4; color: #16a34a; }
+.trend-neutral { background: #fef9c3; color: #a16207; }
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  margin: 0;
+}
+
+.stat-sub {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────── Content Grid */
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ─────────────────────────────────────── Panel */
+.panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.panel-title svg { color: #64748b; }
+
+.panel-link {
+  font-size: 12px;
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+
+.panel-link:hover { opacity: 0.75; }
+
+/* ─────────────────────────────────────── Table */
+.table-wrap { overflow-x: auto; }
+
+.dash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dash-table thead tr { border-bottom: 1px solid #f1f5f9; }
+
+.dash-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dash-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f8fafc;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.dash-table tbody tr:last-child td { border-bottom: none; }
+.dash-table tbody tr:hover td { background: #f8fafc; }
+
+.td-id       { font-family: 'Geist Mono', monospace; font-size: 12px; color: #94a3b8; }
+.td-customer { font-weight: 500; color: #0f172a; }
+.td-amount   { font-family: 'Geist Mono', monospace; font-weight: 500; }
+.td-date     { font-size: 12px; color: #94a3b8; }
+
+/* ─────────────────────────────────────── Skeleton rows */
+.table-skeleton { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+.table-skeleton-row {
+  height: 36px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+/* ─────────────────────────────────────── Badges */
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: capitalize;
+}
+
+.badge-pending   { background: #fef9c3; color: #854d0e; }
+.badge-fulfilled { background: #dcfce7; color: #166534; }
+.badge-cancelled { background: #fee2e2; color: #991b1b; }
+.badge-paid      { background: #dcfce7; color: #166534; }
+.badge-partial   { background: #fef9c3; color: #854d0e; }
+.badge-unpaid    { background: #fee2e2; color: #991b1b; }
+.badge-over      { background: #ede9fe; color: #5b21b6; }
+
+/* ─────────────────────────────────────── Low Stock */
+.stock-list   { padding: 8px 0; }
+
+.stock-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid #f8fafc;
+  transition: background 0.12s;
+}
+
+.stock-item:last-child { border-bottom: none; }
+.stock-item:hover      { background: #f8fafc; }
+
+.stock-name { font-size: 13px; font-weight: 500; color: #0f172a; margin: 0 0 2px; }
+.stock-sku  { font-family: 'Geist Mono', monospace; font-size: 11px; color: #94a3b8; margin: 0; }
+
+.stock-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.stock-critical { background: #fee2e2; color: #991b1b; }
+.stock-low      { background: #fef9c3; color: #854d0e; }
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 20px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.empty-state svg { color: #16a34a; flex-shrink: 0; }
+
+/* ─────────────────────────────────────── Quick Actions */
+.actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 16px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #334155;
+  text-decoration: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.action-btn svg { flex-shrink: 0; }
+
+/* ─────────────────────────────────────── Responsive */
+@media (max-width: 1100px) {
+  .stat-grid    { grid-template-columns: repeat(2, 1fr); }
+  .content-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .dash-root  { padding: 20px 16px; }
+  .stat-grid  { grid-template-columns: 1fr 1fr; }
+  .dash-date  { display: none; }
+}

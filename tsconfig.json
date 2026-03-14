@@ -17,6 +17,7 @@
 //   ],
 // }
 {
+  "extends": "./.nuxt/tsconfig.json",
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
@@ -28,7 +29,11 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "paths": {
+      "~/*": ["./app/*"],
+      "@/*": ["./app/*"]
+    }
   },
   "include": [
     "./.nuxt/**/*.ts",

@@ -1,0 +1,61 @@
+/* ============================================================
+   primevue-auth.css — PrimeVue component overrides for auth pages
+   Import in: nuxt.config.ts → css: ['~/assets/css/primevue-auth.css']
+   These are unscoped so they work without :deep() in .vue files
+   ============================================================ */
+
+/* ─────────────────────────────────────── InputText inside .auth-card */
+.auth-card .p-inputtext {
+  font-family: var(--auth-font, 'Geist', sans-serif);
+  font-size: 14px;
+  border-radius: var(--auth-radius-input, 8px);
+  border-color: var(--auth-input-border, #e2e8f0);
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.auth-card .p-inputtext:enabled:hover {
+  border-color: var(--auth-input-border-hover, #94a3b8);
+}
+
+.auth-card .p-inputtext:enabled:focus {
+  border-color: var(--auth-input-border-focus, #3b82f6);
+  box-shadow: 0 0 0 3px var(--auth-input-focus-ring, rgba(59, 130, 246, 0.12));
+}
+
+/* Password field — push text left of the eye toggle */
+.auth-card .auth-pw-wrap .p-inputtext {
+  padding-right: 40px;
+}
+
+/* ─────────────────────────────────────── Button inside .auth-card */
+.auth-card .auth-submit-btn.p-button {
+  width: 100%;
+  height: 42px;
+  font-family: var(--auth-font, 'Geist', sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--auth-radius-btn, 8px);
+  background: var(--auth-btn-bg, #2563eb);
+  border-color: var(--auth-btn-bg, #2563eb);
+  justify-content: center;
+  transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
+  box-shadow: 0 1px 6px var(--auth-btn-shadow, rgba(37, 99, 235, 0.22));
+}
+
+.auth-card .auth-submit-btn.p-button:not(:disabled):hover {
+  background: var(--auth-btn-bg-hover, #1d4ed8);
+  border-color: var(--auth-btn-bg-hover, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--auth-btn-shadow-hover, rgba(37, 99, 235, 0.32));
+}
+
+.auth-card .auth-submit-btn.p-button:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px var(--auth-btn-shadow, rgba(37, 99, 235, 0.2));
+}
+
+.auth-card .auth-submit-btn.p-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
