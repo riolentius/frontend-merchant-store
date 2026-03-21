@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { mockGetCustomer } from "../../../mocks";
-import type { Customer } from "../../../mocks";
+import { mockGetCustomer } from "~/mocks";
+import type { Customer } from "~/mocks";
 
 definePageMeta({ layout: "dashboard" });
 
@@ -23,20 +23,7 @@ onMounted(async () => {
   }
 });
 
-const doDelete = () => {
-  // TODO: call real delete API
-  router.push("/admin/customers");
-};
-
-const infoRows = computed(() => {
-  if (!customer.value) return [];
-  return [
-    { label: "Full Name", value: customer.value.name },
-    { label: "Email", value: customer.value.email },
-    { label: "Phone", value: customer.value.phone },
-    { label: "Joined", value: customer.value.created_at },
-  ];
-});
+const doDelete = () => router.push("/admin/customers");
 </script>
 
 <template>
@@ -47,7 +34,11 @@ const infoRows = computed(() => {
     >
       <template #action>
         <div class="header-actions">
-          <NuxtLink :to="`/admin/customers/${id}/edit`" class="btn-secondary">
+          <NuxtLink
+            v-if="customer"
+            :to="`/admin/customers/${id}/edit`"
+            class="btn-secondary"
+          >
             <svg
               width="13"
               height="13"
@@ -65,7 +56,11 @@ const infoRows = computed(() => {
             </svg>
             Edit
           </NuxtLink>
-          <button class="btn-danger" @click="showDeleteConfirm = true">
+          <button
+            v-if="customer"
+            class="btn-danger"
+            @click="showDeleteConfirm = true"
+          >
             <svg
               width="13"
               height="13"
@@ -86,7 +81,6 @@ const infoRows = computed(() => {
       </template>
     </PageHeader>
 
-    <!-- Not found -->
     <div v-if="notFound" class="not-found">
       <p>Customer #{{ id }} was not found.</p>
       <NuxtLink to="/admin/customers" class="btn-secondary"
@@ -94,37 +88,41 @@ const infoRows = computed(() => {
       >
     </div>
 
-    <!-- Skeleton -->
     <DataCard v-else-if="isLoading" :loading="true" :skeleton-rows="4" />
 
-    <!-- Detail -->
     <template v-else-if="customer">
       <div class="detail-grid">
-        <!-- Info card -->
         <FormSection title="Customer Information">
           <div class="info-list">
-            <div v-for="row in infoRows" :key="row.label" class="info-row">
-              <span class="info-label">{{ row.label }}</span>
-              <span class="info-value">{{ row.value }}</span>
+            <div class="info-row">
+              <span class="info-label">Full Name</span
+              ><span class="info-value">{{ customer.name }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Category</span>
-              <CategoryBadge :category="customer.category" />
+              <span class="info-label">Email</span
+              ><span class="info-value">{{ customer.email }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Phone</span
+              ><span class="info-value info-mono">{{ customer.phone }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Category</span
+              ><CategoryBadge :category="customer.category" />
+            </div>
+            <div class="info-row">
+              <span class="info-label">Joined</span
+              ><span class="info-value">{{ customer.created_at }}</span>
             </div>
           </div>
         </FormSection>
 
-        <!-- Summary card -->
         <div class="summary-card">
-          <div class="summary-header">
-            <div class="summary-avatar">
-              {{ customer.name.slice(0, 2).toUpperCase() }}
-            </div>
-            <div>
-              <p class="summary-name">{{ customer.name }}</p>
-              <CategoryBadge :category="customer.category" />
-            </div>
+          <div class="summary-avatar">
+            {{ customer.name.slice(0, 2).toUpperCase() }}
           </div>
+          <p class="summary-name">{{ customer.name }}</p>
+          <CategoryBadge :category="customer.category" />
           <div class="summary-stats">
             <div class="summary-stat">
               <p class="summary-stat__val">—</p>
@@ -135,9 +133,27 @@ const infoRows = computed(() => {
               <p class="summary-stat__lbl">Total Spent</p>
             </div>
           </div>
-          <p class="summary-note">
-            Transaction history will appear here once connected to the API.
-          </p>
+          <NuxtLink
+            :to="`/admin/customers/${id}/edit`"
+            class="summary-edit-btn"
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+              />
+              <path
+                d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+              />
+            </svg>
+            Edit this customer
+          </NuxtLink>
         </div>
       </div>
     </template>
@@ -158,14 +174,12 @@ const infoRows = computed(() => {
   flex-direction: column;
   gap: 20px;
 }
-
 .header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -185,7 +199,6 @@ const infoRows = computed(() => {
 .btn-secondary:hover {
   background: #f8fafc;
 }
-
 .btn-danger {
   display: inline-flex;
   align-items: center;
@@ -204,7 +217,6 @@ const infoRows = computed(() => {
 .btn-danger:hover {
   background: #fee2e2;
 }
-
 .btn-ghost {
   font-size: 13px;
   color: #64748b;
@@ -215,7 +227,6 @@ const infoRows = computed(() => {
 .btn-ghost:hover {
   color: #0f172a;
 }
-
 .not-found {
   display: flex;
   flex-direction: column;
@@ -224,24 +235,21 @@ const infoRows = computed(() => {
   padding: 48px;
   color: #64748b;
 }
-
 .detail-grid {
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: 1fr 260px;
   gap: 16px;
   align-items: start;
 }
-
 .info-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 .info-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 11px 0;
   border-bottom: 1px solid #f8fafc;
 }
 .info-row:last-child {
@@ -256,7 +264,9 @@ const infoRows = computed(() => {
   font-weight: 500;
   color: #0f172a;
 }
-
+.info-mono {
+  font-family: "Geist Mono", monospace;
+}
 .summary-card {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -264,71 +274,82 @@ const infoRows = computed(() => {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.summary-header {
-  display: flex;
   align-items: center;
   gap: 12px;
+  text-align: center;
+  position: sticky;
+  top: 80px;
 }
-
 .summary-avatar {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: linear-gradient(145deg, #3b82f6, #1d4ed8);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: #fff;
   text-transform: uppercase;
-  flex-shrink: 0;
 }
-
 .summary-name {
   font-size: 15px;
   font-weight: 600;
   color: #0f172a;
-  margin: 0 0 5px;
+  margin: 0;
 }
-
 .summary-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
 }
 .summary-stat {
   background: #f8fafc;
   border-radius: 8px;
-  padding: 12px;
-  text-align: center;
+  padding: 10px;
 }
 .summary-stat__val {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   color: #0f172a;
   margin: 0 0 2px;
 }
 .summary-stat__lbl {
-  font-size: 11.5px;
+  font-size: 11px;
   color: #94a3b8;
   margin: 0;
 }
-
-.summary-note {
-  font-size: 12px;
-  color: #94a3b8;
-  text-align: center;
-  line-height: 1.5;
-  margin: 0;
+.summary-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  text-decoration: none;
+  width: 100%;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
-
+.summary-edit-btn:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
 @media (max-width: 900px) {
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+  .summary-card {
+    position: static;
   }
 }
 </style>
