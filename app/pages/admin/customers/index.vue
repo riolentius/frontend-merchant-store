@@ -1,19 +1,36 @@
 <script setup lang="ts">
-import { mockGetCustomers } from "../../../mocks";
-import type { Customer } from "../../../mocks";
-
 definePageMeta({ layout: "dashboard" });
+
+interface Customer {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  email: string;
+  phone?: string;
+  categoryId?: string;
+  createdAt: string;
+}
+
+const { $api } = useNuxtApp();
+const { fetchCategories, getCategoryName } = useCategories();
+const router = useRouter();
 
 const customers = ref<Customer[]>([]);
 const isLoading = ref(true);
 const search = ref("");
 const showConfirm = ref(false);
-const deleteTarget = ref<number | null>(null);
-const router = useRouter();
+const deleteTarget = ref<string | null>(null);
 
 onMounted(async () => {
-  customers.value = await mockGetCustomers();
-  isLoading.value = false;
+  await fetchCategories();
+  try {
+    const res = await $api<{ items: Customer[] }>("/customers");
+    customers.value = res.items ?? [];
+  } catch (err) {
+    console.error("Failed to load customers:", err);
+  } finally {
+    isLoading.value = false;
+  }
 });
 
 const filtered = computed(() => {
@@ -21,22 +38,33 @@ const filtered = computed(() => {
   if (!q) return customers.value;
   return customers.value.filter(
     (c) =>
-      c.name.toLowerCase().includes(q) ||
+      `${c.firstName} ${c.lastName ?? ""}`.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q) ||
-      c.phone.includes(q),
+      c.phone?.includes(q),
   );
 });
 
-const confirmDelete = (id: number) => {
+const fullName = (c: Customer) =>
+  [c.firstName, c.lastName].filter(Boolean).join(" ");
+
+const confirmDelete = (id: string) => {
   deleteTarget.value = id;
   showConfirm.value = true;
 };
 
-const doDelete = () => {
+const doDelete = async () => {
+  // TODO: DELETE /customers/:id when backend supports it
   customers.value = customers.value.filter((c) => c.id !== deleteTarget.value);
   showConfirm.value = false;
   deleteTarget.value = null;
 };
+
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 </script>
 
 <template>
@@ -67,7 +95,7 @@ const doDelete = () => {
       <template #toolbar>
         <SearchInput
           v-model="search"
-          placeholder="Search by name, email, phone…"
+          placeholder="Search by name, email or phone…"
         />
         <span class="record-count"
           >{{ filtered.length }} of {{ customers.length }} customers</span
@@ -78,7 +106,6 @@ const doDelete = () => {
         <table class="data-table">
           <thead>
             <tr>
-              <th>#</th>
               <th>Name</th>
               <th>Email</th>
               <th>Phone</th>
@@ -89,15 +116,20 @@ const doDelete = () => {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td colspan="7" class="empty-row">No customers found</td>
+              <td colspan="6" class="empty-row">No customers found</td>
             </tr>
             <tr v-for="c in filtered" :key="c.id">
-              <td class="td-id">{{ c.id }}</td>
-              <td class="td-name">{{ c.name }}</td>
+              <td class="td-name">{{ fullName(c) }}</td>
               <td class="td-muted">{{ c.email }}</td>
-              <td class="td-mono">{{ c.phone }}</td>
-              <td><CategoryBadge :category="c.category" /></td>
-              <td class="td-muted">{{ c.created_at }}</td>
+              <td class="td-mono">{{ c.phone ?? "—" }}</td>
+              <td>
+                <CategoryBadge
+                  v-if="c.categoryId"
+                  :category="getCategoryName(c.categoryId)"
+                />
+                <span v-else class="td-muted">—</span>
+              </td>
+              <td class="td-muted">{{ formatDate(c.createdAt) }}</td>
               <td>
                 <ActionButtons
                   @view="router.push(`/admin/customers/${c.id}`)"
@@ -127,7 +159,6 @@ const doDelete = () => {
   flex-direction: column;
   gap: 20px;
 }
-
 .btn-primary {
   display: flex;
   align-items: center;
@@ -149,13 +180,11 @@ const doDelete = () => {
   background: #1d4ed8;
   transform: translateY(-1px);
 }
-
 .record-count {
   font-size: 12px;
   color: #94a3b8;
   white-space: nowrap;
 }
-
 .table-wrap {
   overflow-x: auto;
 }
@@ -185,12 +214,6 @@ const doDelete = () => {
 }
 .data-table tbody tr:hover td {
   background: #f8fafc;
-}
-
-.td-id {
-  font-family: "Geist Mono", monospace;
-  font-size: 12px;
-  color: #94a3b8;
 }
 .td-name {
   font-weight: 500;

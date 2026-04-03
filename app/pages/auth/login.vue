@@ -12,7 +12,7 @@ if (isAuthenticated.value) {
   await navigateTo("/admin");
 }
 
-const form = reactive({ username: "", password: "" });
+const form = reactive({ email: "", password: "" });
 const isLoading = ref(false);
 const errorMsg = ref("");
 const showPassword = ref(false);
@@ -20,8 +20,8 @@ const showPassword = ref(false);
 const handleLogin = async () => {
   errorMsg.value = "";
 
-  if (!form.username.trim() || !form.password.trim()) {
-    errorMsg.value = "Username and password are required.";
+  if (!form.email.trim() || !form.password.trim()) {
+    errorMsg.value = "Email and password are required.";
     return;
   }
 
@@ -29,17 +29,17 @@ const handleLogin = async () => {
 
   try {
     if (USE_MOCK) {
-      const result = await mockLogin(form.username, form.password);
-      setAuth(result);
+      // Mock still uses username for local dev without backend
+      const result = await mockLogin(form.email, form.password);
+      setAuth({ accessToken: result.access_token, user: result.user });
     } else {
-      await login({ username: form.username, password: form.password });
+      await login({ email: form.email, password: form.password });
     }
     await navigateTo("/admin");
   } catch (err: any) {
     const status = err?.response?.status;
-    if (status === 401) errorMsg.value = "Invalid username or password.";
-    else if (status === 400 || status === 422)
-      errorMsg.value = "Invalid credentials format.";
+    if (status === 401 || status === 400)
+      errorMsg.value = "Invalid email or password.";
     else if (status === 500) errorMsg.value = "Server error. Please try again.";
     else errorMsg.value = "Cannot connect to server.";
   } finally {
@@ -97,6 +97,7 @@ const handleLogin = async () => {
           </p>
         </div>
 
+        <!-- Dev hint — only in mock mode -->
         <div v-if="USE_MOCK" class="dev-hint">
           <svg
             width="13"
@@ -115,19 +116,22 @@ const handleLogin = async () => {
 
         <form novalidate @submit.prevent="handleLogin">
           <div class="auth-fields">
+            <!-- Email -->
             <div class="auth-field">
-              <label for="username" class="auth-label">Username</label>
+              <label for="email" class="auth-label">Email</label>
               <InputText
-                id="username"
-                v-model="form.username"
-                placeholder="e.g. admin"
+                id="email"
+                v-model="form.email"
+                type="email"
+                placeholder="admin@cahayagading.com"
                 :disabled="isLoading"
-                autocomplete="username"
+                autocomplete="email"
                 fluid
                 @keydown.enter="handleLogin"
               />
             </div>
 
+            <!-- Password -->
             <div class="auth-field">
               <label for="password" class="auth-label">Password</label>
               <div class="auth-pw-wrap">
@@ -225,7 +229,7 @@ const handleLogin = async () => {
           </Button>
         </form>
 
-        <p class="auth-foot">Golang Backend Platform · v1.0</p>
+        <p class="auth-foot">Cahaya Gading · Admin Panel</p>
       </div>
     </div>
   </div>

@@ -1,12 +1,20 @@
 <script setup lang="ts">
-defineProps<{
-  category: "Regular" | "Special" | "VIP";
-}>();
+// Accepts either display name ("Regular") or code ("REGULAR")
+const props = defineProps<{ category: string }>();
+
+// Normalize to title case for styling
+const normalized = computed(() => {
+  const c = props.category?.toLowerCase();
+  if (c === "regular") return "Regular";
+  if (c === "special") return "Special";
+  if (c === "vip") return "VIP";
+  return props.category;
+});
 </script>
 
 <template>
-  <span class="badge" :class="`badge--${category.toLowerCase()}`">
-    {{ category }}
+  <span class="badge" :class="`badge--${normalized.toLowerCase()}`">
+    {{ normalized }}
   </span>
 </template>
 
@@ -20,7 +28,6 @@ defineProps<{
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-
 .badge--regular {
   background: #f1f5f9;
   color: #475569;

@@ -11,12 +11,12 @@ export const mockUser: AuthUser = {
 }
 
 export const mockCredentials = {
-  username: 'admin',
+  email: 'admin',
   password: 'admin123',
 }
 
 export const mockAuthResponse: AuthResponse = {
-  access_token: 'mock-jwt-token.ui-development.do-not-use-in-prod',
+  accessToken: 'mock-jwt-token.ui-development.do-not-use-in-prod',
   user: mockUser,
 }
 
@@ -27,7 +27,7 @@ export const mockLogin = async (
 ): Promise<AuthResponse> => {
   await delay(600)
 
-  if (username === mockCredentials.username && password === mockCredentials.password) {
+  if (username === mockCredentials.email && password === mockCredentials.password) {
     return mockAuthResponse
   }
 

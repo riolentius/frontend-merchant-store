@@ -1,21 +1,50 @@
 <script setup lang="ts">
-import { mockGetCustomer } from "~/mocks";
-import type { Customer } from "~/mocks";
-
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const { fetchCategories, getCategoryName } = useCategories();
 const route = useRoute();
 const router = useRouter();
-const id = Number(route.params.id);
+const id = route.params.id as string;
+
+interface Address {
+  id: string;
+  label?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
+  country: string;
+  isDefault: boolean;
+}
+interface Customer {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  email: string;
+  phone?: string;
+  categoryId?: string;
+  createdAt: string;
+}
 
 const customer = ref<Customer | null>(null);
+const addresses = ref<Address[]>([]);
 const isLoading = ref(true);
 const notFound = ref(false);
 const showDeleteConfirm = ref(false);
+const showDeleteAddrConfirm = ref(false);
+const deleteAddrTarget = ref<string | null>(null);
 
 onMounted(async () => {
+  await fetchCategories();
   try {
-    customer.value = await mockGetCustomer(id);
+    const [c, a] = await Promise.all([
+      $api<Customer>(`/customers/${id}`),
+      $api<{ items: Address[] }>(`/customers/${id}/addresses`),
+    ]);
+    customer.value = c;
+    addresses.value = a.items ?? [];
   } catch {
     notFound.value = true;
   } finally {
@@ -23,13 +52,51 @@ onMounted(async () => {
   }
 });
 
+const fullName = (c: Customer) =>
+  [c.firstName, c.lastName].filter(Boolean).join(" ");
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+const formatAddress = (a: Address) =>
+  [a.addressLine1, a.addressLine2, a.city, a.province, a.postalCode, a.country]
+    .filter(Boolean)
+    .join(", ");
+
+const confirmDeleteAddr = (addrId: string) => {
+  deleteAddrTarget.value = addrId;
+  showDeleteAddrConfirm.value = true;
+};
+
+const doDeleteAddr = async () => {
+  if (!deleteAddrTarget.value) return;
+  try {
+    await $api(`/customers/${id}/addresses/${deleteAddrTarget.value}`, {
+      method: "DELETE",
+    });
+    addresses.value = addresses.value.filter(
+      (a) => a.id !== deleteAddrTarget.value,
+    );
+  } catch (err) {
+    console.error(err);
+  } finally {
+    showDeleteAddrConfirm.value = false;
+    deleteAddrTarget.value = null;
+  }
+};
+
 const doDelete = () => router.push("/admin/customers");
 </script>
 
 <template>
   <div class="page">
     <PageHeader
-      :title="isLoading ? 'Loading…' : (customer?.name ?? 'Customer Not Found')"
+      :title="
+        isLoading ? 'Loading…' : customer ? fullName(customer) : 'Not Found'
+      "
       subtitle="Customer details"
     >
       <template #action>
@@ -71,8 +138,6 @@ const doDelete = () => router.push("/admin/customers");
             >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6m4-6v6" />
-              <path d="M9 6V4h6v2" />
             </svg>
             Delete
           </button>
@@ -82,55 +147,115 @@ const doDelete = () => router.push("/admin/customers");
     </PageHeader>
 
     <div v-if="notFound" class="not-found">
-      <p>Customer #{{ id }} was not found.</p>
-      <NuxtLink to="/admin/customers" class="btn-secondary"
-        >← Back to Customers</NuxtLink
-      >
+      <p>Customer not found.</p>
+      <NuxtLink to="/admin/customers" class="btn-secondary">← Back</NuxtLink>
     </div>
 
     <DataCard v-else-if="isLoading" :loading="true" :skeleton-rows="4" />
 
     <template v-else-if="customer">
       <div class="detail-grid">
-        <FormSection title="Customer Information">
-          <div class="info-list">
-            <div class="info-row">
-              <span class="info-label">Full Name</span
-              ><span class="info-value">{{ customer.name }}</span>
+        <div class="left-col">
+          <!-- Info -->
+          <FormSection title="Customer Information">
+            <div class="info-list">
+              <div class="info-row">
+                <span class="info-label">Full Name</span
+                ><span class="info-value">{{ fullName(customer) }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Email</span
+                ><span class="info-value">{{ customer.email }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Phone</span
+                ><span class="info-value">{{ customer.phone ?? "—" }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Category</span>
+                <CategoryBadge
+                  v-if="customer.categoryId"
+                  :category="getCategoryName(customer.categoryId)"
+                />
+                <span v-else class="info-value">—</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Joined</span
+                ><span class="info-value">{{
+                  formatDate(customer.createdAt)
+                }}</span>
+              </div>
             </div>
-            <div class="info-row">
-              <span class="info-label">Email</span
-              ><span class="info-value">{{ customer.email }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Phone</span
-              ><span class="info-value info-mono">{{ customer.phone }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Category</span
-              ><CategoryBadge :category="customer.category" />
-            </div>
-            <div class="info-row">
-              <span class="info-label">Joined</span
-              ><span class="info-value">{{ customer.created_at }}</span>
-            </div>
-          </div>
-        </FormSection>
+          </FormSection>
 
+          <!-- Addresses -->
+          <FormSection title="Addresses">
+            <div v-if="addresses.length === 0" class="empty-state">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              No addresses yet
+            </div>
+            <div v-else class="addr-list">
+              <div v-for="addr in addresses" :key="addr.id" class="addr-card">
+                <div class="addr-card__head">
+                  <div class="addr-card__label-wrap">
+                    <span class="addr-card__label">{{
+                      addr.label || "Address"
+                    }}</span>
+                    <span v-if="addr.isDefault" class="default-badge"
+                      >Default</span
+                    >
+                  </div>
+                  <button
+                    class="addr-delete-btn"
+                    @click="confirmDeleteAddr(addr.id)"
+                  >
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    </svg>
+                  </button>
+                </div>
+                <p class="addr-card__text">{{ formatAddress(addr) }}</p>
+              </div>
+            </div>
+          </FormSection>
+        </div>
+
+        <!-- Summary -->
         <div class="summary-card">
           <div class="summary-avatar">
-            {{ customer.name.slice(0, 2).toUpperCase() }}
+            {{ customer.firstName.slice(0, 2).toUpperCase() }}
           </div>
-          <p class="summary-name">{{ customer.name }}</p>
-          <CategoryBadge :category="customer.category" />
+          <p class="summary-name">{{ fullName(customer) }}</p>
+          <CategoryBadge
+            v-if="customer.categoryId"
+            :category="getCategoryName(customer.categoryId)"
+          />
           <div class="summary-stats">
+            <div class="summary-stat">
+              <p class="summary-stat__val">{{ addresses.length }}</p>
+              <p class="summary-stat__lbl">Addresses</p>
+            </div>
             <div class="summary-stat">
               <p class="summary-stat__val">—</p>
               <p class="summary-stat__lbl">Transactions</p>
-            </div>
-            <div class="summary-stat">
-              <p class="summary-stat__val">—</p>
-              <p class="summary-stat__lbl">Total Spent</p>
             </div>
           </div>
           <NuxtLink
@@ -152,7 +277,7 @@ const doDelete = () => router.push("/admin/customers");
                 d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
               />
             </svg>
-            Edit this customer
+            Edit customer
           </NuxtLink>
         </div>
       </div>
@@ -161,9 +286,16 @@ const doDelete = () => router.push("/admin/customers");
     <ConfirmDialog
       v-model="showDeleteConfirm"
       title="Delete Customer"
-      description="This will permanently delete this customer. This action cannot be undone."
+      description="This will permanently delete this customer."
       confirm-label="Yes, Delete"
       @confirm="doDelete"
+    />
+    <ConfirmDialog
+      v-model="showDeleteAddrConfirm"
+      title="Delete Address"
+      description="Remove this address from the customer?"
+      confirm-label="Yes, Delete"
+      @confirm="doDeleteAddr"
     />
   </div>
 </template>
@@ -241,6 +373,11 @@ const doDelete = () => router.push("/admin/customers");
   gap: 16px;
   align-items: start;
 }
+.left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .info-list {
   display: flex;
   flex-direction: column;
@@ -264,9 +401,70 @@ const doDelete = () => router.push("/admin/customers");
   font-weight: 500;
   color: #0f172a;
 }
-.info-mono {
-  font-family: "Geist Mono", monospace;
+
+/* Address list */
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 0;
+  font-size: 13px;
+  color: #94a3b8;
 }
+.addr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.addr-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 14px;
+}
+.addr-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.addr-card__label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.addr-card__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.default-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  background: #eff6ff;
+  color: #2563eb;
+  border-radius: 99px;
+}
+.addr-card__text {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0;
+}
+.addr-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.addr-delete-btn:hover {
+  color: #dc2626;
+}
+
+/* Summary */
 .summary-card {
   background: #fff;
   border: 1px solid #e2e8f0;

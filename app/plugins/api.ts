@@ -3,11 +3,10 @@ export default defineNuxtPlugin(() => {
   const token  = useCookie('admin_token')
 
   const api = $fetch.create({
-    baseURL: config.public.apiBase as string,
+    baseURL: `${config.public.apiBase}/api/admin`,
 
     onRequest({ options }) {
       if (token.value) {
-        // Use Headers object to avoid type issues
         const headers = new Headers(options.headers as HeadersInit)
         headers.set('Authorization', `Bearer ${token.value}`)
         options.headers = headers

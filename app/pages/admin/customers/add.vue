@@ -1,37 +1,88 @@
 <script setup lang="ts">
-import type { Customer } from "../../../mocks";
-
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const { categories, fetchCategories, getCategoryIdByCode } = useCategories();
 const router = useRouter();
+
 const isLoading = ref(false);
 const showConfirmLeave = ref(false);
 
 const form = reactive({
-  name: "",
+  firstName: "",
+  lastName: "",
   email: "",
   phone: "",
-  category: "Regular" as Customer["category"],
+  categoryCode: "REGULAR" as string,
 });
 
-const errors = reactive({ name: "", email: "", phone: "" });
+const address = reactive({
+  label: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  province: "",
+  postalCode: "",
+  country: "ID",
+  isDefault: true,
+});
 
-const categories: Customer["category"][] = ["Regular", "Special", "VIP"];
+const errors = reactive({
+  firstName: "",
+  email: "",
+  addressLine1: "",
+});
+
+onMounted(() => fetchCategories());
 
 const validate = () => {
-  errors.name = form.name.trim() ? "" : "Name is required";
+  errors.firstName = form.firstName.trim() ? "" : "First name is required";
   errors.email = form.email.trim() ? "" : "Email is required";
-  errors.phone = form.phone.trim() ? "" : "Phone is required";
-  return !errors.name && !errors.email && !errors.phone;
+  errors.addressLine1 = address.addressLine1.trim()
+    ? ""
+    : "Address line 1 is required";
+  return !errors.firstName && !errors.email && !errors.addressLine1;
 };
 
-const handleSubmit = async () => {
+const handleSave = async () => {
   if (!validate()) return;
   isLoading.value = true;
-  // TODO: replace with real API call
-  await new Promise((r) => setTimeout(r, 600));
-  isLoading.value = false;
-  router.push("/admin/customers");
+  try {
+    const categoryId = getCategoryIdByCode(form.categoryCode);
+
+    // Step 1 — create customer
+    const customer = await $api<{ id: string }>("/customers", {
+      method: "POST",
+      body: {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim() || undefined,
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
+        categoryId: categoryId || undefined,
+      },
+    });
+
+    // Step 2 — create address linked to customer
+    await $api(`/customers/${customer.id}/addresses`, {
+      method: "POST",
+      body: {
+        label: address.label.trim() || undefined,
+        addressLine1: address.addressLine1.trim(),
+        addressLine2: address.addressLine2.trim() || undefined,
+        city: address.city.trim() || undefined,
+        province: address.province.trim() || undefined,
+        postalCode: address.postalCode.trim() || undefined,
+        country: address.country || "ID",
+        isDefault: true,
+      },
+    });
+
+    router.push("/admin/customers");
+  } catch (err: any) {
+    console.error("Failed to create customer:", err);
+  } finally {
+    isLoading.value = false;
+  }
 };
 </script>
 
@@ -55,28 +106,37 @@ const handleSubmit = async () => {
       </template>
     </PageHeader>
 
-    <form novalidate @submit.prevent="handleSubmit">
+    <form novalidate @submit.prevent="handleSave">
       <div class="form-layout">
-        <!-- Main fields -->
+        <!-- ── Customer Info ── -->
         <FormSection
           title="Customer Information"
           subtitle="Basic contact details"
         >
-          <div class="field-group">
-            <label class="field-label"
-              >Full Name <span class="req">*</span></label
-            >
-            <InputText
-              v-model="form.name"
-              placeholder="e.g. Budi Santoso"
-              fluid
-              :class="{ 'p-invalid': errors.name }"
-            />
-            <span v-if="errors.name" class="field-error">{{
-              errors.name
-            }}</span>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label"
+                >First Name <span class="req">*</span></label
+              >
+              <InputText
+                v-model="form.firstName"
+                placeholder="e.g. Budi"
+                fluid
+                :class="{ 'p-invalid': errors.firstName }"
+              />
+              <span v-if="errors.firstName" class="field-error">{{
+                errors.firstName
+              }}</span>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Last Name</label>
+              <InputText
+                v-model="form.lastName"
+                placeholder="e.g. Santoso"
+                fluid
+              />
+            </div>
           </div>
-
           <div class="field-row">
             <div class="field-group">
               <label class="field-label"
@@ -94,49 +154,113 @@ const handleSubmit = async () => {
               }}</span>
             </div>
             <div class="field-group">
-              <label class="field-label"
-                >Phone <span class="req">*</span></label
-              >
+              <label class="field-label">Phone</label>
               <InputText
                 v-model="form.phone"
                 placeholder="e.g. 081234567890"
                 fluid
-                :class="{ 'p-invalid': errors.phone }"
               />
-              <span v-if="errors.phone" class="field-error">{{
-                errors.phone
-              }}</span>
             </div>
           </div>
         </FormSection>
 
-        <!-- Category -->
+        <!-- ── Address ── -->
+        <FormSection
+          title="Default Address"
+          subtitle="Primary address for this customer — required"
+        >
+          <div class="field-group">
+            <label class="field-label">Label</label>
+            <InputText
+              v-model="address.label"
+              placeholder="e.g. Main Office, Warehouse"
+              fluid
+            />
+          </div>
+          <div class="field-group">
+            <label class="field-label"
+              >Address Line 1 <span class="req">*</span></label
+            >
+            <InputText
+              v-model="address.addressLine1"
+              placeholder="Street name and number"
+              fluid
+              :class="{ 'p-invalid': errors.addressLine1 }"
+            />
+            <span v-if="errors.addressLine1" class="field-error">{{
+              errors.addressLine1
+            }}</span>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Address Line 2</label>
+            <InputText
+              v-model="address.addressLine2"
+              placeholder="Floor, unit, building (optional)"
+              fluid
+            />
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">City</label>
+              <InputText
+                v-model="address.city"
+                placeholder="e.g. Jakarta"
+                fluid
+              />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Province</label>
+              <InputText
+                v-model="address.province"
+                placeholder="e.g. DKI Jakarta"
+                fluid
+              />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">Postal Code</label>
+              <InputText
+                v-model="address.postalCode"
+                placeholder="e.g. 10110"
+                fluid
+              />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Country</label>
+              <InputText v-model="address.country" placeholder="ID" fluid />
+            </div>
+          </div>
+        </FormSection>
+
+        <!-- ── Category ── -->
         <FormSection
           title="Pricing Category"
-          subtitle="Determines which prices apply to this customer"
+          subtitle="Determines which prices apply during transactions"
         >
           <div class="category-grid">
             <label
               v-for="cat in categories"
-              :key="cat"
+              :key="cat.code"
               class="category-option"
-              :class="{ 'category-option--active': form.category === cat }"
+              :class="{
+                'category-option--active': form.categoryCode === cat.code,
+              }"
             >
               <input
                 type="radio"
-                v-model="form.category"
-                :value="cat"
+                v-model="form.categoryCode"
+                :value="cat.code"
                 class="sr-only"
               />
               <div class="category-option__inner">
-                <CategoryBadge :category="cat" />
-                <span class="category-option__desc">
-                  <span v-if="cat === 'Regular'">Standard pricing</span>
-                  <span v-else-if="cat === 'Special'">Discounted pricing</span>
-                  <span v-else>Best pricing tier</span>
-                </span>
+                <CategoryBadge :category="cat.name" />
+                <span class="category-option__desc">{{ cat.description }}</span>
               </div>
-              <div class="category-option__check" v-if="form.category === cat">
+              <div
+                v-if="form.categoryCode === cat.code"
+                class="category-option__check"
+              >
                 <svg
                   width="12"
                   height="12"
@@ -152,7 +276,7 @@ const handleSubmit = async () => {
           </div>
         </FormSection>
 
-        <!-- Form actions -->
+        <!-- ── Actions ── -->
         <div class="form-actions">
           <button
             type="button"
@@ -188,7 +312,7 @@ const handleSubmit = async () => {
     <ConfirmDialog
       v-model="showConfirmLeave"
       title="Discard changes?"
-      description="You have unsaved changes. Are you sure you want to leave this page?"
+      description="You have unsaved changes. Are you sure you want to leave?"
       confirm-label="Yes, Discard"
       @confirm="router.push('/admin/customers')"
     />
@@ -201,7 +325,11 @@ const handleSubmit = async () => {
   flex-direction: column;
   gap: 20px;
 }
-
+.form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -216,21 +344,11 @@ const handleSubmit = async () => {
   cursor: pointer;
   font-family: inherit;
   text-decoration: none;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
+  transition: background 0.15s;
 }
 .btn-secondary:hover {
   background: #f8fafc;
-  border-color: #94a3b8;
 }
-
-.form-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .field-group {
   display: flex;
   flex-direction: column;
@@ -241,22 +359,18 @@ const handleSubmit = async () => {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-
 .field-label {
   font-size: 12.5px;
   font-weight: 500;
   color: #475569;
-  letter-spacing: 0.02em;
 }
 .req {
   color: #ef4444;
-  margin-left: 2px;
 }
 .field-error {
   font-size: 12px;
   color: #dc2626;
 }
-
 :deep(.p-inputtext) {
   font-family: "Geist", sans-serif;
   font-size: 14px;
@@ -270,13 +384,11 @@ const handleSubmit = async () => {
 :deep(.p-invalid.p-inputtext) {
   border-color: #ef4444;
 }
-
 .category-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
-
 .category-option {
   position: relative;
   border: 1.5px solid #e2e8f0;
@@ -295,7 +407,6 @@ const handleSubmit = async () => {
   border-color: #3b82f6;
   background: #eff6ff;
 }
-
 .category-option__inner {
   display: flex;
   flex-direction: column;
@@ -305,7 +416,6 @@ const handleSubmit = async () => {
   font-size: 12px;
   color: #64748b;
 }
-
 .category-option__check {
   position: absolute;
   top: 10px;
@@ -319,7 +429,6 @@ const handleSubmit = async () => {
   align-items: center;
   justify-content: center;
 }
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -327,15 +436,12 @@ const handleSubmit = async () => {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
 }
-
 .form-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  padding-top: 4px;
 }
-
 :deep(.btn-submit.p-button) {
   background: #2563eb;
   border-color: #2563eb;
@@ -350,13 +456,11 @@ const handleSubmit = async () => {
   background: #1d4ed8;
   border-color: #1d4ed8;
 }
-
 .btn-inner {
   display: flex;
   align-items: center;
   gap: 7px;
 }
-
 @media (max-width: 640px) {
   .field-row {
     grid-template-columns: 1fr;

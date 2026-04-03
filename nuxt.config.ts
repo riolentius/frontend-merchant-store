@@ -1,26 +1,27 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
 import Aura from '@primeuix/themes/aura'
 
 export default defineNuxtConfig({
-  modules: [
-    '@primevue/nuxt-module',
+  modules: ['@primevue/nuxt-module'],
+
+  css: [
+    '~/assets/css/auth.css',
+    '~/assets/css/primevue-auth.css',
+    '~/assets/css/dashboard.css',
+    '~/assets/css/dashboard-page.css',
   ],
 
-  // Global stylesheets
-  css: [
-    '~/assets/css/auth.css',          // auth pages layout + variables
-    '~/assets/css/primevue-auth.css', // PrimeVue overrides for auth
-    '~/assets/css/dashboard.css',     // dashboard layout + sidebar + topbar
-    '~/assets/css/dashboard-page.css', // dashboard page-specific styles
-  ],
+  // Disable SSR for all admin + auth pages
+  // These pages need browser APIs (cookies, $api plugin)
+  routeRules: {
+    '/admin/**': { ssr: false },
+    '/auth/**':  { ssr: false },
+  },
 
   primevue: {
     options: {
       theme: {
         preset: Aura,
-        options: {
-          darkModeSelector: false || 'none',
-        },
+        options: { darkModeSelector: false || 'none' },
       },
     },
   },
