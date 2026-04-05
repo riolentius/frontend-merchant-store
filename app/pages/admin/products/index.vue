@@ -1,53 +1,67 @@
 <script setup lang="ts">
-import { mockGetProducts } from "../../../mocks";
-import type { Product } from "../../../mocks";
+import type { Product, ProductPrice } from "../../../composables/useProducts";
 
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const { fetchCategories, categories, getCategoryName } = useCategories();
+const { fetchPrices, formatRupiah } = useProducts();
+const router = useRouter();
+
 const products = ref<Product[]>([]);
+const priceMap = ref<Record<string, ProductPrice[]>>({});
 const isLoading = ref(true);
 const search = ref("");
 const filterStatus = ref<"all" | "active" | "inactive">("all");
-const deleteTarget = ref<number | null>(null);
 const showConfirm = ref(false);
-const router = useRouter();
+const deleteTarget = ref<string | null>(null);
 
 onMounted(async () => {
-  products.value = await mockGetProducts();
-  isLoading.value = false;
+  await fetchCategories();
+  try {
+    const res = await $api<{ items: Product[] }>("/products");
+    products.value = res.items ?? [];
+    // Fetch prices for each product
+    await Promise.all(
+      products.value.map(async (p) => {
+        priceMap.value[p.id] = await fetchPrices(p.id);
+      }),
+    );
+  } catch (err) {
+    console.error("Failed to load products:", err);
+  } finally {
+    isLoading.value = false;
+  }
 });
 
 const filtered = computed(() => {
   let list = products.value;
-
-  if (filterStatus.value === "active") list = list.filter((p) => p.is_active);
-  if (filterStatus.value === "inactive")
-    list = list.filter((p) => !p.is_active);
-
+  if (filterStatus.value === "active") list = list.filter((p) => p.isActive);
+  if (filterStatus.value === "inactive") list = list.filter((p) => !p.isActive);
   const q = search.value.toLowerCase().trim();
   if (!q) return list;
   return list.filter(
-    (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
+    (p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q),
   );
 });
 
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
+// Get price amount for a product + category
+const getPriceAmount = (
+  productId: string,
+  categoryId: string,
+): string | null => {
+  const prices = priceMap.value[productId] ?? [];
+  const price = prices.find((p) => p.categoryId === categoryId);
+  return price ? price.amount : null;
+};
 
-// Get Regular price as the displayed price
-const regularPrice = (p: Product) =>
-  p.prices.find((pr) => pr.category === "Regular")?.price ?? 0;
-
-const confirmDelete = (id: number) => {
+const confirmDelete = (id: string) => {
   deleteTarget.value = id;
   showConfirm.value = true;
 };
 
 const doDelete = () => {
+  // TODO: DELETE /products/:id when backend supports it
   products.value = products.value.filter((p) => p.id !== deleteTarget.value);
   showConfirm.value = false;
   deleteTarget.value = null;
@@ -82,7 +96,6 @@ const doDelete = () => {
       <template #toolbar>
         <div class="toolbar-left">
           <SearchInput v-model="search" placeholder="Search by name or SKU…" />
-          <!-- Status filter tabs -->
           <div class="filter-tabs">
             <button
               v-for="f in ['all', 'active', 'inactive'] as const"
@@ -104,47 +117,40 @@ const doDelete = () => {
         <table class="data-table">
           <thead>
             <tr>
-              <th>SKU</th>
               <th>Name</th>
+              <th>SKU</th>
               <th>Stock</th>
               <th>Status</th>
-              <th>Regular Price</th>
-              <th>Special Price</th>
-              <th>VIP Price</th>
+              <!-- Price columns per category -->
+              <th
+                v-for="cat in categories"
+                :key="cat.id"
+                :style="{ color: catColor(cat.code) }"
+              >
+                {{ cat.name }}
+              </th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td colspan="8" class="empty-row">No products found</td>
+              <td :colspan="5 + categories.length" class="empty-row">
+                No products found
+              </td>
             </tr>
             <tr v-for="p in filtered" :key="p.id">
-              <td class="td-sku">{{ p.sku }}</td>
               <td class="td-name">{{ p.name }}</td>
-              <td><StockBadge :stock="p.stock" /></td>
-              <td><StatusBadge :active="p.is_active" /></td>
-              <td class="td-price">
-                {{
-                  formatRupiah(
-                    p.prices.find((pr) => pr.category === "Regular")?.price ??
-                      0,
-                  )
-                }}
-              </td>
-              <td class="td-price td-price--special">
-                {{
-                  formatRupiah(
-                    p.prices.find((pr) => pr.category === "Special")?.price ??
-                      0,
-                  )
-                }}
-              </td>
-              <td class="td-price td-price--vip">
-                {{
-                  formatRupiah(
-                    p.prices.find((pr) => pr.category === "VIP")?.price ?? 0,
-                  )
-                }}
+              <td class="td-sku">{{ p.sku ?? "—" }}</td>
+              <td><StockBadge :stock="p.stockOnHand" /></td>
+              <td><StatusBadge :active="p.isActive" /></td>
+              <td v-for="cat in categories" :key="cat.id" class="td-price">
+                <span
+                  v-if="getPriceAmount(p.id, cat.id)"
+                  :style="{ color: catColor(cat.code) }"
+                >
+                  {{ formatRupiah(getPriceAmount(p.id, cat.id)!) }}
+                </span>
+                <span v-else class="td-muted">—</span>
               </td>
               <td>
                 <ActionButtons
@@ -162,12 +168,22 @@ const doDelete = () => {
     <ConfirmDialog
       v-model="showConfirm"
       title="Delete Product"
-      description="This will permanently delete this product and all its prices. This action cannot be undone."
+      description="This will permanently delete this product and all its prices."
       confirm-label="Yes, Delete"
       @confirm="doDelete"
     />
   </div>
 </template>
+
+<script lang="ts">
+// catColor helper outside setup for template use
+function catColor(code: string): string {
+  if (code === "REGULAR") return "#475569";
+  if (code === "SPECIAL") return "#1d4ed8";
+  if (code === "VIP") return "#854d0e";
+  return "#475569";
+}
+</script>
 
 <style scoped>
 .page {
@@ -175,7 +191,6 @@ const doDelete = () => {
   flex-direction: column;
   gap: 20px;
 }
-
 .btn-primary {
   display: flex;
   align-items: center;
@@ -197,14 +212,12 @@ const doDelete = () => {
   background: #1d4ed8;
   transform: translateY(-1px);
 }
-
 .toolbar-left {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-
 .filter-tabs {
   display: flex;
   gap: 2px;
@@ -231,16 +244,11 @@ const doDelete = () => {
   color: #0f172a;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
-.filter-tab:not(.filter-tab--active):hover {
-  color: #0f172a;
-}
-
 .record-count {
   font-size: 12px;
   color: #94a3b8;
   white-space: nowrap;
 }
-
 .table-wrap {
   overflow-x: auto;
 }
@@ -271,26 +279,22 @@ const doDelete = () => {
 .data-table tbody tr:hover td {
   background: #f8fafc;
 }
-
+.td-name {
+  font-weight: 500;
+  color: #0f172a;
+}
 .td-sku {
   font-family: "Geist Mono", monospace;
   font-size: 12px;
   color: #64748b;
 }
-.td-name {
-  font-weight: 500;
-  color: #0f172a;
-}
 .td-price {
   font-family: "Geist Mono", monospace;
   font-size: 12.5px;
-  color: #334155;
+  font-weight: 500;
 }
-.td-price--special {
-  color: #1d4ed8;
-}
-.td-price--vip {
-  color: #854d0e;
+.td-muted {
+  color: #94a3b8;
 }
 .empty-row {
   text-align: center;

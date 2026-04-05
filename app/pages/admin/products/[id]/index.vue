@@ -1,21 +1,34 @@
 <script setup lang="ts">
-import { mockGetProduct } from "~/mocks";
-import type { Product } from "~/mocks";
+import type {
+  Product,
+  ProductPrice,
+} from "../../../../composables/useProducts";
 
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const { fetchCategories, categories, getCategoryName } = useCategories();
+const { fetchPrices, formatRupiah } = useProducts();
 const route = useRoute();
 const router = useRouter();
-const id = Number(route.params.id);
+const id = route.params.id as string;
 
 const product = ref<Product | null>(null);
+const prices = ref<ProductPrice[]>([]);
 const isLoading = ref(true);
 const notFound = ref(false);
 const showDeleteConfirm = ref(false);
 
 onMounted(async () => {
+  await fetchCategories();
   try {
-    product.value = await mockGetProduct(id);
+    const res = await $api<{ items: Product[] }>("/products");
+    product.value = (res.items ?? []).find((p) => p.id === id) ?? null;
+    if (!product.value) {
+      notFound.value = true;
+      return;
+    }
+    prices.value = await fetchPrices(id);
   } catch {
     notFound.value = true;
   } finally {
@@ -23,27 +36,24 @@ onMounted(async () => {
   }
 });
 
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
+const catColor = (code: string) => {
+  if (code === "REGULAR") return "#475569";
+  if (code === "SPECIAL") return "#1d4ed8";
+  if (code === "VIP") return "#854d0e";
+  return "#475569";
+};
+
+const getPriceForCategory = (categoryId: string) =>
+  prices.value.find((p) => p.categoryId === categoryId);
 
 const doDelete = () => router.push("/admin/products");
-
-const categoryColors: Record<string, string> = {
-  Regular: "#475569",
-  Special: "#1d4ed8",
-  VIP: "#854d0e",
-};
 </script>
 
 <template>
   <div class="page">
     <PageHeader
-      :title="isLoading ? 'Loading…' : (product?.name ?? 'Product Not Found')"
-      :subtitle="product ? `SKU: ${product.sku}` : ''"
+      :title="isLoading ? 'Loading…' : (product?.name ?? 'Not Found')"
+      :subtitle="product?.sku ? `SKU: ${product.sku}` : ''"
     >
       <template #action>
         <div class="header-actions">
@@ -84,8 +94,6 @@ const categoryColors: Record<string, string> = {
             >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6m4-6v6" />
-              <path d="M9 6V4h6v2" />
             </svg>
             Delete
           </button>
@@ -94,123 +102,136 @@ const categoryColors: Record<string, string> = {
       </template>
     </PageHeader>
 
-    <!-- Not found -->
     <div v-if="notFound" class="not-found">
-      <p>Product #{{ id }} was not found.</p>
-      <NuxtLink to="/admin/products" class="btn-secondary"
-        >← Back to Products</NuxtLink
-      >
+      <p>Product not found.</p>
+      <NuxtLink to="/admin/products" class="btn-secondary">← Back</NuxtLink>
     </div>
 
-    <!-- Skeleton -->
     <DataCard v-else-if="isLoading" :loading="true" :skeleton-rows="4" />
 
-    <!-- Detail -->
     <template v-else-if="product">
       <div class="detail-grid">
-        <!-- Left col -->
         <div class="left-col">
+          <!-- Info -->
           <FormSection title="Product Information">
             <div class="info-list">
               <div class="info-row">
-                <span class="info-label">Name</span>
-                <span class="info-value">{{ product.name }}</span>
+                <span class="info-label">Name</span
+                ><span class="info-value">{{ product.name }}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">SKU</span>
-                <span class="info-value info-mono">{{ product.sku }}</span>
+                <span class="info-label">SKU</span
+                ><span class="info-value info-mono">{{
+                  product.sku ?? "—"
+                }}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">Stock</span>
-                <StockBadge :stock="product.stock" />
+                <span class="info-label">Stock</span
+                ><StockBadge :stock="product.stockOnHand" />
               </div>
               <div class="info-row">
-                <span class="info-label">Status</span>
-                <StatusBadge :active="product.is_active" />
+                <span class="info-label">Reserved</span
+                ><span class="info-value">{{ product.stockReserved }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Status</span
+                ><StatusBadge :active="product.isActive" />
               </div>
             </div>
           </FormSection>
 
+          <!-- Prices -->
           <FormSection title="Pricing Per Category">
-            <div class="price-list">
-              <div
-                v-for="p in product.prices"
-                :key="p.category"
-                class="price-row"
-              >
-                <div class="price-cat">
-                  <span
-                    class="price-cat__dot"
-                    :style="{ background: categoryColors[p.category] }"
-                  />
-                  <span
-                    class="price-cat__name"
-                    :style="{ color: categoryColors[p.category] }"
-                  >
-                    {{ p.category }}
-                  </span>
-                </div>
-                <span class="price-val">{{ formatRupiah(p.price) }}</span>
-              </div>
-            </div>
-          </FormSection>
-        </div>
-
-        <!-- Right: summary -->
-        <div class="summary-card">
-          <div class="summary-header">
-            <div class="summary-icon">
+            <div v-if="prices.length === 0" class="empty-state">
               <svg
-                width="22"
-                height="22"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.5"
               >
                 <path
-                  d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+                  d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
                 />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
               </svg>
+              No prices set yet
             </div>
-            <div>
-              <p class="summary-name">{{ product.name }}</p>
-              <p class="summary-sku">{{ product.sku }}</p>
+            <div v-else class="price-list">
+              <div v-for="cat in categories" :key="cat.id" class="price-row">
+                <div class="price-cat">
+                  <span
+                    class="price-cat__dot"
+                    :style="{ background: catColor(cat.code) }"
+                  />
+                  <span
+                    class="price-cat__name"
+                    :style="{ color: catColor(cat.code) }"
+                    >{{ cat.name }}</span
+                  >
+                </div>
+                <span v-if="getPriceForCategory(cat.id)" class="price-val">
+                  {{ formatRupiah(getPriceForCategory(cat.id)!.amount) }}
+                </span>
+                <span v-else class="price-none">Not set</span>
+              </div>
             </div>
+          </FormSection>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary-card">
+          <div class="summary-icon">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+              />
+            </svg>
           </div>
+          <p class="summary-name">{{ product.name }}</p>
+          <p class="summary-sku">{{ product.sku ?? "No SKU" }}</p>
 
           <div class="summary-stats">
             <div class="summary-stat">
-              <p class="summary-stat__val">{{ product.stock }}</p>
-              <p class="summary-stat__lbl">Units in Stock</p>
+              <p class="summary-stat__val">{{ product.stockOnHand }}</p>
+              <p class="summary-stat__lbl">In Stock</p>
             </div>
             <div class="summary-stat">
               <p
                 class="summary-stat__val"
-                :style="{ color: product.is_active ? '#16a34a' : '#94a3b8' }"
+                :style="{ color: product.isActive ? '#16a34a' : '#94a3b8' }"
               >
-                {{ product.is_active ? "Active" : "Inactive" }}
+                {{ product.isActive ? "Active" : "Inactive" }}
               </p>
               <p class="summary-stat__lbl">Status</p>
             </div>
           </div>
 
-          <div class="summary-prices">
-            <p class="summary-prices__title">Price Range</p>
+          <div v-if="prices.length > 0" class="summary-prices">
+            <p class="summary-prices__title">Prices</p>
             <div
-              v-for="p in product.prices"
-              :key="p.category"
+              v-for="cat in categories"
+              :key="cat.id"
               class="summary-prices__row"
             >
-              <span
-                class="summary-prices__cat"
-                :style="{ color: categoryColors[p.category] }"
-              >
-                {{ p.category }}
-              </span>
-              <span class="summary-prices__val">{{
-                formatRupiah(p.price)
+              <span :style="{ color: catColor(cat.code), fontWeight: 600 }">{{
+                cat.name
               }}</span>
+              <span class="summary-prices__val">
+                {{
+                  getPriceForCategory(cat.id)
+                    ? formatRupiah(getPriceForCategory(cat.id)!.amount)
+                    : "—"
+                }}
+              </span>
             </div>
           </div>
 
@@ -239,7 +260,7 @@ const categoryColors: Record<string, string> = {
     <ConfirmDialog
       v-model="showDeleteConfirm"
       title="Delete Product"
-      description="This will permanently delete this product and all its prices. This action cannot be undone."
+      description="This will permanently delete this product and all its prices."
       confirm-label="Yes, Delete"
       @confirm="doDelete"
     />
@@ -252,14 +273,12 @@ const categoryColors: Record<string, string> = {
   flex-direction: column;
   gap: 20px;
 }
-
 .header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -279,7 +298,6 @@ const categoryColors: Record<string, string> = {
 .btn-secondary:hover {
   background: #f8fafc;
 }
-
 .btn-danger {
   display: inline-flex;
   align-items: center;
@@ -298,18 +316,15 @@ const categoryColors: Record<string, string> = {
 .btn-danger:hover {
   background: #fee2e2;
 }
-
 .btn-ghost {
   font-size: 13px;
   color: #64748b;
   text-decoration: none;
   padding: 7px 4px;
-  transition: color 0.15s;
 }
 .btn-ghost:hover {
   color: #0f172a;
 }
-
 .not-found {
   display: flex;
   flex-direction: column;
@@ -318,7 +333,6 @@ const categoryColors: Record<string, string> = {
   padding: 48px;
   color: #64748b;
 }
-
 .detail-grid {
   display: grid;
   grid-template-columns: 1fr 280px;
@@ -330,7 +344,6 @@ const categoryColors: Record<string, string> = {
   flex-direction: column;
   gap: 16px;
 }
-
 .info-list {
   display: flex;
   flex-direction: column;
@@ -357,15 +370,22 @@ const categoryColors: Record<string, string> = {
 .info-mono {
   font-family: "Geist Mono", monospace;
 }
-
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
 .price-list {
   display: flex;
   flex-direction: column;
 }
 .price-row {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   padding: 11px 0;
   border-bottom: 1px solid #f8fafc;
 }
@@ -381,7 +401,6 @@ const categoryColors: Record<string, string> = {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  flex-shrink: 0;
 }
 .price-cat__name {
   font-size: 13.5px;
@@ -392,7 +411,10 @@ const categoryColors: Record<string, string> = {
   font-weight: 500;
   color: #0f172a;
 }
-
+.price-none {
+  font-size: 12px;
+  color: #94a3b8;
+}
 .summary-card {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -400,31 +422,27 @@ const categoryColors: Record<string, string> = {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
   position: sticky;
   top: 80px;
 }
-.summary-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 .summary-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   background: #f1f5f9;
   color: #475569;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
 .summary-name {
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
-  margin: 0 0 2px;
+  margin: 0;
 }
 .summary-sku {
   font-family: "Geist Mono", monospace;
@@ -432,17 +450,16 @@ const categoryColors: Record<string, string> = {
   color: #94a3b8;
   margin: 0;
 }
-
 .summary-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
+  width: 100%;
 }
 .summary-stat {
   background: #f8fafc;
   border-radius: 8px;
-  padding: 12px;
-  text-align: center;
+  padding: 10px;
 }
 .summary-stat__val {
   font-size: 18px;
@@ -455,11 +472,11 @@ const categoryColors: Record<string, string> = {
   color: #94a3b8;
   margin: 0;
 }
-
 .summary-prices {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
 }
 .summary-prices__title {
   font-size: 11px;
@@ -475,21 +492,17 @@ const categoryColors: Record<string, string> = {
   font-size: 13px;
   padding: 4px 0;
 }
-.summary-prices__cat {
-  font-weight: 600;
-}
 .summary-prices__val {
   font-family: "Geist Mono", monospace;
   color: #0f172a;
   font-weight: 500;
 }
-
 .summary-edit-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 9px;
+  padding: 9px 16px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -497,6 +510,7 @@ const categoryColors: Record<string, string> = {
   font-weight: 500;
   color: #475569;
   text-decoration: none;
+  width: 100%;
   transition:
     background 0.15s,
     border-color 0.15s;
@@ -506,7 +520,6 @@ const categoryColors: Record<string, string> = {
   border-color: #bfdbfe;
   color: #1d4ed8;
 }
-
 @media (max-width: 900px) {
   .detail-grid {
     grid-template-columns: 1fr;

@@ -1,29 +1,43 @@
 <script setup lang="ts">
-import { mockGetTransaction } from "~/mocks";
-import type { Transaction } from "~/mocks";
+import type { TransactionView } from "../../../../composables/useTransactions";
 
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const {
+  formatRupiah,
+  formatDateTime,
+  statusColor,
+  paymentStatusColor,
+  paymentProgress,
+} = useTransactions();
 const route = useRoute();
 const router = useRouter();
-const id = Number(route.params.id);
+const id = route.params.id as string;
 
-const transaction = ref<Transaction | null>(null);
+const view = ref<TransactionView | null>(null);
 const isLoading = ref(true);
 const notFound = ref(false);
-const showFulfillConfirm = ref(false);
-const showDeleteConfirm = ref(false);
+
+// Actions
 const isFulfilling = ref(false);
+const showFulfillConfirm = ref(false);
+const showCancelConfirm = ref(false);
+
+// Add payment
 const showAddPayment = ref(false);
-const paymentForm = reactive({
-  method: "cash" as "cash" | "transfer",
-  amount: 0,
-});
 const isSavingPayment = ref(false);
+const paymentForm = reactive({
+  method: "cash",
+  amount: "",
+  senderName: "",
+  reference: "",
+  note: "",
+});
 
 onMounted(async () => {
   try {
-    transaction.value = await mockGetTransaction(id);
+    view.value = await $api<TransactionView>(`/transactions/${id}/view`);
   } catch {
     notFound.value = true;
   } finally {
@@ -31,85 +45,112 @@ onMounted(async () => {
   }
 });
 
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
-
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-
-const outstanding = computed(() =>
-  transaction.value
-    ? transaction.value.total - transaction.value.total_paid
+const progress = computed(() =>
+  view.value
+    ? paymentProgress(view.value.paidAmount, view.value.totalAmount)
     : 0,
 );
 
-const canFulfill = computed(() => transaction.value?.status === "pending");
-
-const canAddPayment = computed(
-  () =>
-    transaction.value?.payment_status !== "paid" &&
-    transaction.value?.payment_status !== "overpaid" &&
-    transaction.value?.status !== "cancelled",
+// Status transitions
+const canConfirm = computed(() => view.value?.status === "draft");
+const canFulfill = computed(() => view.value?.status === "pending");
+const canCancel = computed(() =>
+  ["draft", "pending"].includes(view.value?.status ?? ""),
 );
+const canPay = computed(
+  () =>
+    view.value?.paymentStatus !== "paid" &&
+    view.value?.paymentStatus !== "overpaid" &&
+    view.value?.status !== "cancelled",
+);
+
+const doConfirm = async () => {
+  try {
+    await $api(`/transactions/${id}/status`, {
+      method: "PATCH",
+      body: { status: "pending" },
+    });
+    view.value = await $api<TransactionView>(`/transactions/${id}/view`);
+  } catch (err) {
+    console.error(err);
+  }
+};
 
 const doFulfill = async () => {
   isFulfilling.value = true;
-  await new Promise((r) => setTimeout(r, 600));
-  if (transaction.value) transaction.value.status = "fulfilled";
-  isFulfilling.value = false;
-  showFulfillConfirm.value = false;
+  try {
+    await $api(`/transactions/${id}/fulfill`, { method: "POST" });
+    view.value = await $api<TransactionView>(`/transactions/${id}/view`);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    isFulfilling.value = false;
+    showFulfillConfirm.value = false;
+  }
+};
+
+const doCancel = async () => {
+  try {
+    await $api(`/transactions/${id}/status`, {
+      method: "PATCH",
+      body: { status: "cancelled" },
+    });
+    view.value = await $api<TransactionView>(`/transactions/${id}/view`);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    showCancelConfirm.value = false;
+  }
 };
 
 const doAddPayment = async () => {
-  if (paymentForm.amount <= 0) return;
+  if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) return;
   isSavingPayment.value = true;
-  await new Promise((r) => setTimeout(r, 500));
-  if (transaction.value) {
-    transaction.value.payments.push({
-      id: Date.now(),
-      method: paymentForm.method,
-      amount: paymentForm.amount,
-      paid_at: new Date().toISOString().split("T")[0],
+  try {
+    await $api(`/transactions/${id}/payments`, {
+      method: "POST",
+      body: {
+        method: paymentForm.method,
+        amount: paymentForm.amount,
+        currency: "IDR",
+        senderName: paymentForm.senderName || undefined,
+        reference: paymentForm.reference || undefined,
+        note: paymentForm.note || undefined,
+      },
     });
-    transaction.value.total_paid += paymentForm.amount;
-    // Recalculate payment status
-    const paid = transaction.value.total_paid;
-    const total = transaction.value.total;
-    if (paid >= total)
-      transaction.value.payment_status = paid > total ? "overpaid" : "paid";
-    else if (paid > 0) transaction.value.payment_status = "partial";
-    else transaction.value.payment_status = "unpaid";
+    // Refresh view
+    view.value = await $api<TransactionView>(`/transactions/${id}/view`);
+    showAddPayment.value = false;
+    paymentForm.amount = "";
+    paymentForm.senderName = "";
+    paymentForm.reference = "";
+    paymentForm.note = "";
+  } catch (err) {
+    console.error(err);
+  } finally {
+    isSavingPayment.value = false;
   }
-  paymentForm.amount = 0;
-  isSavingPayment.value = false;
-  showAddPayment.value = false;
 };
 </script>
 
 <template>
   <div class="page">
     <PageHeader
-      :title="isLoading ? 'Loading…' : `Transaction #${id}`"
-      :subtitle="
-        transaction
-          ? `${transaction.customer_name} · ${formatDate(transaction.created_at)}`
-          : ''
-      "
+      :title="isLoading ? 'Loading…' : `Transaction`"
+      :subtitle="view ? `#${view.id.slice(0, 8)}… · ${view.customerName}` : ''"
     >
       <template #action>
         <div class="header-actions">
-          <!-- Fulfill button -->
           <button
-            v-if="canFulfill"
-            class="btn-fulfill"
+            v-if="canConfirm && view"
+            class="btn-action btn-action--blue"
+            @click="doConfirm"
+          >
+            Confirm Order
+          </button>
+          <button
+            v-if="canFulfill && view"
+            class="btn-action btn-action--green"
             @click="showFulfillConfirm = true"
           >
             <svg
@@ -122,12 +163,11 @@ const doAddPayment = async () => {
             >
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            Mark Fulfilled
+            Fulfill
           </button>
-          <!-- Add payment button -->
           <button
-            v-if="canAddPayment && transaction"
-            class="btn-payment"
+            v-if="canPay && view"
+            class="btn-action btn-action--blue"
             @click="showAddPayment = true"
           >
             <svg
@@ -144,21 +184,10 @@ const doAddPayment = async () => {
             Add Payment
           </button>
           <button
-            v-if="transaction"
-            class="btn-danger"
-            @click="showDeleteConfirm = true"
+            v-if="canCancel && view"
+            class="btn-action btn-action--red"
+            @click="showCancelConfirm = true"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            </svg>
             Cancel
           </button>
           <NuxtLink to="/admin/transactions" class="btn-ghost">← Back</NuxtLink>
@@ -167,36 +196,39 @@ const doAddPayment = async () => {
     </PageHeader>
 
     <div v-if="notFound" class="not-found">
-      <p>Transaction #{{ id }} was not found.</p>
+      <p>Transaction not found.</p>
       <NuxtLink to="/admin/transactions" class="btn-secondary">← Back</NuxtLink>
     </div>
 
-    <DataCard v-else-if="isLoading" :loading="true" :skeleton-rows="4" />
+    <DataCard v-else-if="isLoading" :loading="true" :skeleton-rows="5" />
 
-    <template v-else-if="transaction">
+    <template v-else-if="view">
       <div class="detail-grid">
-        <!-- Left col -->
         <div class="left-col">
-          <!-- Status overview -->
+          <!-- Status bar -->
           <div class="status-bar">
-            <div class="status-bar__item">
-              <span class="status-bar__label">Order Status</span>
-              <TransactionBadge :status="transaction.status" />
-            </div>
-            <div class="status-bar__item">
-              <span class="status-bar__label">Payment Status</span>
-              <PaymentBadge :status="transaction.payment_status" />
-            </div>
-            <div class="status-bar__item">
-              <span class="status-bar__label">Customer</span>
-              <span class="status-bar__val">{{
-                transaction.customer_name
+            <div class="status-item">
+              <span class="status-item__label">Order Status</span>
+              <span class="status-badge" :style="statusColor(view.status)">{{
+                view.status
               }}</span>
             </div>
-            <div class="status-bar__item">
-              <span class="status-bar__label">Date</span>
-              <span class="status-bar__val">{{
-                formatDate(transaction.created_at)
+            <div class="status-item">
+              <span class="status-item__label">Payment</span>
+              <span
+                class="status-badge"
+                :style="paymentStatusColor(view.paymentStatus)"
+                >{{ view.paymentStatus }}</span
+              >
+            </div>
+            <div class="status-item">
+              <span class="status-item__label">Customer</span>
+              <span class="status-item__val">{{ view.customerName }}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-item__label">Created</span>
+              <span class="status-item__val">{{
+                formatDateTime(view.createdAt)
               }}</span>
             </div>
           </div>
@@ -207,26 +239,28 @@ const doAddPayment = async () => {
               <thead>
                 <tr>
                   <th>Product</th>
+                  <th>SKU</th>
                   <th>Unit Price</th>
                   <th>Qty</th>
                   <th>Subtotal</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in transaction.items" :key="item.product_id">
-                  <td class="item-name">{{ item.product_name }}</td>
-                  <td>
-                    <PriceDisplay :amount="item.unit_price" size="sm" muted />
+                <tr v-for="item in view.items" :key="item.productId">
+                  <td class="item-name">{{ item.productName }}</td>
+                  <td class="item-sku">{{ item.sku ?? "—" }}</td>
+                  <td class="item-amount">
+                    {{ formatRupiah(item.unitAmount) }}
                   </td>
                   <td class="item-qty">× {{ item.qty }}</td>
-                  <td><PriceDisplay :amount="item.subtotal" /></td>
+                  <td class="item-total">{{ formatRupiah(item.lineTotal) }}</td>
                 </tr>
               </tbody>
               <tfoot>
                 <tr class="total-row">
-                  <td colspan="3" class="total-label">Grand Total</td>
-                  <td>
-                    <PriceDisplay :amount="transaction.total" size="lg" />
+                  <td colspan="4" class="total-label">Grand Total</td>
+                  <td class="total-val">
+                    {{ formatRupiah(view.totalAmount) }}
                   </td>
                 </tr>
               </tfoot>
@@ -235,13 +269,10 @@ const doAddPayment = async () => {
 
           <!-- Payments -->
           <FormSection title="Payment History">
-            <div
-              v-if="transaction.payments.length === 0"
-              class="empty-payments"
-            >
+            <div v-if="view.payments.length === 0" class="empty-payments">
               <svg
-                width="20"
-                height="20"
+                width="18"
+                height="18"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -254,42 +285,49 @@ const doAddPayment = async () => {
             </div>
             <div v-else class="payment-list">
               <div
-                v-for="pay in transaction.payments"
+                v-for="pay in view.payments"
                 :key="pay.id"
                 class="payment-row"
               >
                 <div class="payment-row__left">
-                  <span
-                    class="payment-method"
-                    :class="`payment-method--${pay.method}`"
+                  <span class="payment-method"
+                    >{{ pay.method === "cash" ? "💵" : "🏦" }}
+                    {{ pay.method }}</span
                   >
-                    {{ pay.method === "cash" ? "💵" : "🏦" }} {{ pay.method }}
-                  </span>
-                  <span class="payment-date">{{
-                    formatDate(pay.paid_at)
+                  <span v-if="pay.senderName" class="payment-sender">{{
+                    pay.senderName
                   }}</span>
+                  <span v-if="pay.reference" class="payment-ref"
+                    >Ref: {{ pay.reference }}</span
+                  >
                 </div>
-                <PriceDisplay :amount="pay.amount" />
+                <span class="payment-amount">{{
+                  formatRupiah(pay.amount)
+                }}</span>
               </div>
-              <!-- Total paid summary -->
+              <!-- Summary -->
               <div class="payment-summary">
                 <div class="payment-summary__row">
                   <span>Total Paid</span>
-                  <PriceDisplay :amount="transaction.total_paid" />
+                  <span class="payment-summary__val">{{
+                    formatRupiah(view.paidAmount)
+                  }}</span>
                 </div>
                 <div
-                  class="payment-summary__row"
-                  :class="{ 'payment-summary__row--danger': outstanding > 0 }"
+                  class="payment-summary__row payment-summary__row--due"
+                  v-if="parseFloat(view.balanceDue) > 0"
                 >
-                  <span>Outstanding</span>
-                  <PriceDisplay :amount="Math.max(0, outstanding)" />
+                  <span>Balance Due</span>
+                  <span class="payment-summary__val">{{
+                    formatRupiah(view.balanceDue)
+                  }}</span>
                 </div>
               </div>
             </div>
 
-            <!-- Add payment inline form -->
-            <div v-if="showAddPayment" class="add-payment-form">
-              <div class="add-payment-form__header">
+            <!-- Add payment form -->
+            <div v-if="showAddPayment" class="add-payment">
+              <div class="add-payment__head">
                 <span>Record Payment</span>
                 <button
                   type="button"
@@ -299,37 +337,83 @@ const doAddPayment = async () => {
                   ✕
                 </button>
               </div>
-              <div class="add-payment-form__body">
+              <div class="add-payment__body">
+                <div class="method-grid">
+                  <label
+                    v-for="m in ['cash', 'transfer']"
+                    :key="m"
+                    class="method-card"
+                    :class="{ 'method-card--active': paymentForm.method === m }"
+                  >
+                    <input
+                      type="radio"
+                      v-model="paymentForm.method"
+                      :value="m"
+                      class="sr-only"
+                    />
+                    <span>{{ m === "cash" ? "💵 Cash" : "🏦 Transfer" }}</span>
+                  </label>
+                </div>
                 <div class="field-row">
                   <div class="field-group">
-                    <label class="field-label">Method</label>
-                    <div class="method-tabs">
-                      <button
-                        v-for="m in ['cash', 'transfer']"
-                        :key="m"
-                        type="button"
-                        class="method-tab"
-                        :class="{
-                          'method-tab--active': paymentForm.method === m,
-                        }"
-                        @click="paymentForm.method = m as 'cash' | 'transfer'"
-                      >
-                        {{ m === "cash" ? "💵 Cash" : "🏦 Transfer" }}
-                      </button>
-                    </div>
-                  </div>
-                  <div class="field-group">
-                    <label class="field-label">Amount (IDR)</label>
+                    <label class="field-label">Amount (IDR) *</label>
                     <InputText
-                      v-model.number="paymentForm.amount"
+                      v-model="paymentForm.amount"
                       type="number"
                       min="0"
-                      :placeholder="`Max: ${formatRupiah(outstanding)}`"
+                      :placeholder="`Due: ${formatRupiah(view.balanceDue)}`"
+                      fluid
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label">Sender Name</label>
+                    <InputText
+                      v-model="paymentForm.senderName"
+                      placeholder="Optional"
                       fluid
                     />
                   </div>
                 </div>
-                <div class="add-payment-actions">
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label">Reference</label>
+                    <InputText
+                      v-model="paymentForm.reference"
+                      placeholder="e.g. Transfer ref no."
+                      fluid
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label">Note</label>
+                    <InputText
+                      v-model="paymentForm.note"
+                      placeholder="Optional"
+                      fluid
+                    />
+                  </div>
+                </div>
+                <!-- Quick fill -->
+                <div class="quick-fills">
+                  <button
+                    type="button"
+                    class="quick-btn"
+                    @click="
+                      paymentForm.amount = String(
+                        Math.round(parseFloat(view.balanceDue) / 2),
+                      )
+                    "
+                  >
+                    Half ({{ formatRupiah(parseFloat(view.balanceDue) / 2) }})
+                  </button>
+                  <button
+                    type="button"
+                    class="quick-btn quick-btn--full"
+                    @click="paymentForm.amount = view.balanceDue"
+                  >
+                    Full ({{ formatRupiah(view.balanceDue) }})
+                  </button>
+                </div>
+                <div class="add-payment__footer">
                   <button
                     type="button"
                     class="btn-secondary"
@@ -340,7 +424,7 @@ const doAddPayment = async () => {
                   <button
                     type="button"
                     class="btn-save"
-                    :disabled="paymentForm.amount <= 0 || isSavingPayment"
+                    :disabled="!paymentForm.amount || isSavingPayment"
                     @click="doAddPayment"
                   >
                     {{ isSavingPayment ? "Saving…" : "Record Payment" }}
@@ -348,48 +432,34 @@ const doAddPayment = async () => {
                 </div>
               </div>
             </div>
-
-            <button
-              v-if="!showAddPayment && canAddPayment"
-              type="button"
-              class="add-item-btn"
-              @click="showAddPayment = true"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Record Payment
-            </button>
           </FormSection>
         </div>
 
-        <!-- Right: summary -->
+        <!-- Summary sidebar -->
         <div class="summary-card">
           <p class="summary-title">Summary</p>
 
           <div class="summary-amounts">
             <div class="amount-row">
-              <span>Order Total</span>
-              <PriceDisplay :amount="transaction.total" />
+              <span>Total</span
+              ><span class="amount-val">{{
+                formatRupiah(view.totalAmount)
+              }}</span>
             </div>
             <div class="amount-row">
-              <span>Total Paid</span>
-              <PriceDisplay :amount="transaction.total_paid" />
+              <span>Paid</span
+              ><span class="amount-val">{{
+                formatRupiah(view.paidAmount)
+              }}</span>
             </div>
             <div
-              class="amount-row amount-row--outstanding"
-              v-if="outstanding > 0"
+              v-if="parseFloat(view.balanceDue) > 0"
+              class="amount-row amount-row--due"
             >
-              <span>Outstanding</span>
-              <PriceDisplay :amount="outstanding" />
+              <span>Balance Due</span
+              ><span class="amount-val">{{
+                formatRupiah(view.balanceDue)
+              }}</span>
             </div>
           </div>
 
@@ -398,36 +468,31 @@ const doAddPayment = async () => {
             <div class="progress-bar">
               <div
                 class="progress-fill"
-                :style="{
-                  width: `${Math.min(100, (transaction.total_paid / transaction.total) * 100)}%`,
-                }"
+                :style="{ width: `${progress}%` }"
                 :class="
-                  transaction.payment_status === 'paid'
+                  progress >= 100
                     ? 'progress-fill--done'
                     : 'progress-fill--partial'
                 "
               />
             </div>
-            <span class="progress-label">
-              {{
-                Math.min(
-                  100,
-                  Math.round(
-                    (transaction.total_paid / transaction.total) * 100,
-                  ),
-                )
-              }}% paid
-            </span>
+            <span class="progress-label">{{ progress }}% paid</span>
           </div>
 
           <div class="summary-badges">
-            <div class="summary-badge-row">
-              <span class="summary-badge-label">Order</span>
-              <TransactionBadge :status="transaction.status" />
+            <div class="badge-row">
+              <span class="badge-label">Order</span>
+              <span class="status-badge" :style="statusColor(view.status)">{{
+                view.status
+              }}</span>
             </div>
-            <div class="summary-badge-row">
-              <span class="summary-badge-label">Payment</span>
-              <PaymentBadge :status="transaction.payment_status" />
+            <div class="badge-row">
+              <span class="badge-label">Payment</span>
+              <span
+                class="status-badge"
+                :style="paymentStatusColor(view.paymentStatus)"
+                >{{ view.paymentStatus }}</span
+              >
             </div>
           </div>
 
@@ -448,27 +513,43 @@ const doAddPayment = async () => {
             </svg>
             Mark as Fulfilled
           </button>
+
+          <button
+            v-if="canPay"
+            class="btn-pay-lg"
+            @click="showAddPayment = true"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="1" y="4" width="22" height="16" rx="2" />
+              <line x1="1" y1="10" x2="23" y2="10" />
+            </svg>
+            Record Payment
+          </button>
         </div>
       </div>
     </template>
 
-    <!-- Fulfill confirm -->
     <ConfirmDialog
       v-model="showFulfillConfirm"
       title="Fulfill Transaction?"
-      description="This will deduct stock for all items in this order. This action cannot be undone."
+      description="Stock will be deducted. This cannot be undone."
       confirm-label="Yes, Fulfill"
       :danger="false"
       @confirm="doFulfill"
     />
-
-    <!-- Cancel confirm -->
     <ConfirmDialog
-      v-model="showDeleteConfirm"
+      v-model="showCancelConfirm"
       title="Cancel Transaction?"
-      description="This will cancel the transaction. No stock will be deducted."
+      description="This will cancel the order and release any reserved stock."
       confirm-label="Yes, Cancel"
-      @confirm="router.push('/admin/transactions')"
+      @confirm="doCancel"
     />
   </div>
 </template>
@@ -485,64 +566,52 @@ const doAddPayment = async () => {
   gap: 8px;
   flex-wrap: wrap;
 }
-
-.btn-fulfill {
+.btn-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 7px 13px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.btn-action--green {
   background: #f0fdf4;
   color: #16a34a;
-  border: 1px solid #86efac;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
+  border-color: #86efac;
 }
-.btn-fulfill:hover {
+.btn-action--green:hover {
   background: #dcfce7;
 }
-
-.btn-payment {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 13px;
+.btn-action--blue {
   background: #eff6ff;
   color: #2563eb;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
+  border-color: #bfdbfe;
 }
-.btn-payment:hover {
+.btn-action--blue:hover {
   background: #dbeafe;
 }
-
-.btn-danger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 13px;
+.btn-action--red {
   background: #fef2f2;
   color: #dc2626;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
+  border-color: #fecaca;
 }
-.btn-danger:hover {
+.btn-action--red:hover {
   background: #fee2e2;
 }
-
+.btn-ghost {
+  font-size: 13px;
+  color: #64748b;
+  text-decoration: none;
+  padding: 7px 4px;
+}
+.btn-ghost:hover {
+  color: #0f172a;
+}
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -556,47 +625,11 @@ const doAddPayment = async () => {
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
-  text-decoration: none;
   transition: background 0.15s;
 }
 .btn-secondary:hover {
   background: #f8fafc;
 }
-
-.btn-ghost {
-  font-size: 13px;
-  color: #64748b;
-  text-decoration: none;
-  padding: 7px 4px;
-  transition: color 0.15s;
-}
-.btn-ghost:hover {
-  color: #0f172a;
-}
-
-.btn-save {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  background: #2563eb;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-}
-.btn-save:hover:not(:disabled) {
-  background: #1d4ed8;
-}
-.btn-save:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .not-found {
   display: flex;
   flex-direction: column;
@@ -605,43 +638,9 @@ const doAddPayment = async () => {
   padding: 48px;
   color: #64748b;
 }
-
-/* Status bar */
-.status-bar {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  overflow: hidden;
-}
-.status-bar__item {
-  padding: 14px 16px;
-  border-right: 1px solid #f1f5f9;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.status-bar__item:last-child {
-  border-right: none;
-}
-.status-bar__label {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.status-bar__val {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: #0f172a;
-}
-
 .detail-grid {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  grid-template-columns: 1fr 280px;
   gap: 16px;
   align-items: start;
 }
@@ -649,6 +648,47 @@ const doAddPayment = async () => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Status bar */
+.status-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.status-item {
+  padding: 14px 16px;
+  border-right: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.status-item:last-child {
+  border-right: none;
+}
+.status-item__label {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.status-item__val {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #0f172a;
+}
+.status-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: capitalize;
+  align-self: flex-start;
 }
 
 /* Items table */
@@ -678,6 +718,16 @@ const doAddPayment = async () => {
   font-weight: 500;
   color: #0f172a;
 }
+.item-sku {
+  font-family: "Geist Mono", monospace;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.item-amount,
+.item-total {
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+}
 .item-qty {
   color: #64748b;
 }
@@ -691,12 +741,18 @@ const doAddPayment = async () => {
   font-weight: 600;
   color: #0f172a;
 }
+.total-val {
+  font-family: "Geist Mono", monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
 
 /* Payments */
 .empty-payments {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   padding: 16px 0;
   font-size: 13px;
   color: #94a3b8;
@@ -704,7 +760,6 @@ const doAddPayment = async () => {
 .payment-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 .payment-row {
   display: flex;
@@ -720,6 +775,7 @@ const doAddPayment = async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .payment-method {
   font-size: 13px;
@@ -727,54 +783,54 @@ const doAddPayment = async () => {
   color: #334155;
   text-transform: capitalize;
 }
-.payment-date {
+.payment-sender,
+.payment-ref {
   font-size: 12px;
   color: #94a3b8;
 }
-
+.payment-amount {
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+}
 .payment-summary {
   border-top: 1px solid #f1f5f9;
-  margin-top: 4px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .payment-summary__row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   font-size: 13px;
   color: #475569;
 }
-.payment-summary__row--danger {
+.payment-summary__row--due {
   color: #dc2626;
   font-weight: 500;
 }
-
-/* Add payment form */
-.add-payment-form {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-top: 8px;
+.payment-summary__val {
+  font-family: "Geist Mono", monospace;
 }
-.add-payment-form__header {
+
+/* Add payment */
+.add-payment {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+.add-payment__head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  padding: 10px 16px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
   font-size: 13px;
   font-weight: 600;
   color: #0f172a;
-}
-.add-payment-form__body {
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 .picker-close {
   background: none;
@@ -782,12 +838,38 @@ const doAddPayment = async () => {
   cursor: pointer;
   color: #94a3b8;
   font-size: 14px;
-  transition: color 0.15s;
 }
-.picker-close:hover {
-  color: #0f172a;
+.add-payment__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-
+.method-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.method-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.method-card--active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -803,38 +885,6 @@ const doAddPayment = async () => {
   font-weight: 500;
   color: #475569;
 }
-
-.method-tabs {
-  display: flex;
-  gap: 6px;
-}
-.method-tab {
-  flex: 1;
-  padding: 8px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 7px;
-  background: #fff;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #475569;
-  cursor: pointer;
-  font-family: inherit;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-}
-.method-tab--active {
-  border-color: #3b82f6;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.add-payment-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 :deep(.p-inputtext) {
   font-family: "Geist", sans-serif;
   font-size: 14px;
@@ -845,29 +895,56 @@ const doAddPayment = async () => {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
-
-.add-item-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 10px;
-  padding: 8px 14px;
+.quick-fills {
+  display: flex;
+  gap: 8px;
+}
+.quick-btn {
+  padding: 5px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   background: #f8fafc;
-  border: 1.5px dashed #e2e8f0;
-  border-radius: 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: #475569;
   cursor: pointer;
   font-family: inherit;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+  transition: background 0.12s;
 }
-.add-item-btn:hover {
-  border-color: #3b82f6;
+.quick-btn:hover {
+  background: #f1f5f9;
+}
+.quick-btn--full {
   background: #eff6ff;
-  color: #2563eb;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+.add-payment__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.btn-save:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Summary card */
@@ -878,7 +955,7 @@ const doAddPayment = async () => {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   position: sticky;
   top: 80px;
 }
@@ -888,7 +965,6 @@ const doAddPayment = async () => {
   color: #0f172a;
   margin: 0;
 }
-
 .summary-amounts {
   display: flex;
   flex-direction: column;
@@ -897,19 +973,21 @@ const doAddPayment = async () => {
 .amount-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   font-size: 13px;
   color: #475569;
 }
-.amount-row--outstanding {
+.amount-row--due {
   color: #dc2626;
   font-weight: 500;
 }
-
+.amount-val {
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+}
 .progress-wrap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .progress-bar {
   height: 6px;
@@ -920,7 +998,7 @@ const doAddPayment = async () => {
 .progress-fill {
   height: 100%;
   border-radius: 99px;
-  transition: width 0.4s ease;
+  transition: width 0.4s;
 }
 .progress-fill--partial {
   background: #f59e0b;
@@ -933,41 +1011,58 @@ const doAddPayment = async () => {
   color: #94a3b8;
   text-align: right;
 }
-
 .summary-badges {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.summary-badge-row {
+.badge-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.summary-badge-label {
+.badge-label {
   font-size: 12.5px;
   color: #64748b;
 }
-
-.btn-fulfill-lg {
+.btn-fulfill-lg,
+.btn-pay-lg {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
   padding: 10px;
   width: 100%;
-  background: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #86efac;
   border-radius: 8px;
   font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
+  border: 1px solid;
   transition: background 0.15s;
+}
+.btn-fulfill-lg {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #86efac;
 }
 .btn-fulfill-lg:hover {
   background: #dcfce7;
+}
+.btn-pay-lg {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+.btn-pay-lg:hover {
+  background: #dbeafe;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
 }
 
 @media (max-width: 1000px) {
@@ -984,9 +1079,6 @@ const doAddPayment = async () => {
 @media (max-width: 640px) {
   .field-row {
     grid-template-columns: 1fr;
-  }
-  .status-bar {
-    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

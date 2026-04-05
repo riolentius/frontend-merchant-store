@@ -1,63 +1,118 @@
 <script setup lang="ts">
+import { SKU_UNITS } from "../../../config/skuUnits";
+
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const { fetchCategories, categories } = useCategories();
+const { createPrices, formatRupiah } = useProducts();
 const router = useRouter();
+
 const isLoading = ref(false);
 const showConfirmLeave = ref(false);
 
 const form = reactive({
   name: "",
-  sku: "",
-  stock: 0,
-  is_active: true,
-  prices: [
-    { category: "Regular", price: 0 },
-    { category: "Special", price: 0 },
-    { category: "VIP", price: 0 },
-  ],
+  skuUnit: "", // selected from dropdown e.g. "KG"
+  skuSuffix: "", // optional custom suffix e.g. "BERAS-001"
+  stockOnHand: 0,
+  cost: "", // cost price as string
 });
+
+// Price per category
+const priceInputs = ref<
+  { categoryId: string; categoryName: string; code: string; amount: string }[]
+>([]);
 
 const errors = reactive({
   name: "",
-  sku: "",
-  stock: "",
-  prices: ["", "", ""],
+  skuUnit: "",
+  cost: "",
+  prices: [] as string[],
 });
+
+onMounted(async () => {
+  await fetchCategories();
+  priceInputs.value = categories.value.map((c) => ({
+    categoryId: c.id,
+    categoryName: c.name,
+    code: c.code,
+    amount: "",
+  }));
+  errors.prices = categories.value.map(() => "");
+});
+
+// Build the full SKU string: UNIT-SUFFIX or just UNIT
+const fullSku = computed(() => {
+  if (!form.skuUnit) return "";
+  if (form.skuSuffix.trim())
+    return `${form.skuUnit}-${form.skuSuffix.trim().toUpperCase()}`;
+  return form.skuUnit;
+});
+
+const catColor = (code: string) => {
+  if (code === "REGULAR") return "#475569";
+  if (code === "SPECIAL") return "#1d4ed8";
+  if (code === "VIP") return "#854d0e";
+  return "#475569";
+};
 
 const validate = () => {
   errors.name = form.name.trim() ? "" : "Product name is required";
-  errors.sku = form.sku.trim() ? "" : "SKU is required";
-  errors.stock = form.stock >= 0 ? "" : "Stock cannot be negative";
-  errors.prices = form.prices.map((p) =>
-    p.price > 0 ? "" : "Price must be greater than 0",
+  errors.skuUnit = form.skuUnit ? "" : "Please select a SKU unit";
+  errors.cost =
+    form.cost && parseFloat(form.cost) >= 0 ? "" : "Cost price is required";
+  errors.prices = priceInputs.value.map((p) =>
+    p.amount && parseFloat(p.amount) > 0 ? "" : "Price must be greater than 0",
   );
   return (
     !errors.name &&
-    !errors.sku &&
-    !errors.stock &&
+    !errors.skuUnit &&
+    !errors.cost &&
     errors.prices.every((e) => !e)
   );
 };
 
-const handleSubmit = async () => {
+const handleSave = async () => {
   if (!validate()) return;
   isLoading.value = true;
-  await new Promise((r) => setTimeout(r, 700));
-  isLoading.value = false;
-  router.push("/admin/products");
+  try {
+    const product = await $api<{ id: string }>("/products", {
+      method: "POST",
+      body: {
+        name: form.name.trim(),
+        sku: fullSku.value || undefined,
+        cost: form.cost,
+        stockOnHand: form.stockOnHand,
+      },
+    });
+    await createPrices(
+      product.id,
+      priceInputs.value.map((p) => ({
+        categoryId: p.categoryId,
+        amount: p.amount,
+      })),
+    );
+    router.push("/admin/products");
+  } catch (err) {
+    console.error("Failed to create product:", err);
+  } finally {
+    isLoading.value = false;
+  }
 };
 
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
+const previewAmount = (amount: string) => {
+  const n = parseFloat(amount);
+  return n > 0 ? formatRupiah(n) : "—";
+};
 
-const categoryColors: Record<string, string> = {
-  Regular: "#475569",
-  Special: "#1d4ed8",
-  VIP: "#854d0e",
+// Margin preview per category
+const margin = (sellingAmount: string) => {
+  const sell = parseFloat(sellingAmount);
+  const cost = parseFloat(form.cost);
+  if (!sell || !cost || cost <= 0) return null;
+  const pct = (((sell - cost) / cost) * 100).toFixed(1);
+  return { amount: formatRupiah(sell - cost), pct };
 };
 </script>
 
@@ -84,12 +139,12 @@ const categoryColors: Record<string, string> = {
       </template>
     </PageHeader>
 
-    <form novalidate @submit.prevent="handleSubmit">
+    <form novalidate @submit.prevent="handleSave">
       <div class="form-layout">
-        <!-- Basic Info -->
+        <!-- Product Info -->
         <FormSection
           title="Product Information"
-          subtitle="Name, SKU and stock level"
+          subtitle="Name, unit, stock and cost price"
         >
           <div class="field-group">
             <label class="field-label"
@@ -97,7 +152,7 @@ const categoryColors: Record<string, string> = {
             >
             <InputText
               v-model="form.name"
-              placeholder="e.g. Beras Premium 5kg"
+              placeholder="e.g. Beras Premium"
               fluid
               :class="{ 'p-invalid': errors.name }"
             />
@@ -106,61 +161,90 @@ const categoryColors: Record<string, string> = {
             }}</span>
           </div>
 
+          <!-- SKU Unit dropdown + suffix -->
+          <div class="field-group">
+            <label class="field-label"
+              >SKU Unit <span class="req">*</span></label
+            >
+            <div class="sku-row">
+              <select
+                v-model="form.skuUnit"
+                class="sku-select"
+                :class="{ 'sku-select--error': errors.skuUnit }"
+              >
+                <option value="" disabled>Select unit…</option>
+                <option v-for="u in SKU_UNITS" :key="u.code" :value="u.code">
+                  {{ u.label }} — {{ u.description }}
+                </option>
+              </select>
+              <span class="sku-sep">—</span>
+              <InputText
+                v-model="form.skuSuffix"
+                placeholder="Optional suffix (e.g. 001)"
+                class="sku-suffix"
+              />
+            </div>
+            <span v-if="errors.skuUnit" class="field-error">{{
+              errors.skuUnit
+            }}</span>
+            <span v-if="fullSku" class="sku-preview">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
+              </svg>
+              SKU will be: <strong>{{ fullSku }}</strong>
+            </span>
+          </div>
+
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">SKU <span class="req">*</span></label>
+              <label class="field-label">Initial Stock</label>
               <InputText
-                v-model="form.sku"
-                placeholder="e.g. BRS-001"
-                fluid
-                :class="{ 'p-invalid': errors.sku }"
-              />
-              <span v-if="errors.sku" class="field-error">{{
-                errors.sku
-              }}</span>
-            </div>
-            <div class="field-group">
-              <label class="field-label"
-                >Initial Stock <span class="req">*</span></label
-              >
-              <InputText
-                v-model.number="form.stock"
+                v-model.number="form.stockOnHand"
                 type="number"
                 min="0"
                 placeholder="0"
                 fluid
-                :class="{ 'p-invalid': errors.stock }"
               />
-              <span v-if="errors.stock" class="field-error">{{
-                errors.stock
+            </div>
+            <div class="field-group">
+              <label class="field-label"
+                >Cost Price (IDR) <span class="req">*</span></label
+              >
+              <InputText
+                v-model="form.cost"
+                type="number"
+                min="0"
+                placeholder="e.g. 50000"
+                fluid
+                :class="{ 'p-invalid': errors.cost }"
+              />
+              <span v-if="errors.cost" class="field-error">{{
+                errors.cost
               }}</span>
+              <span
+                v-if="form.cost && parseFloat(form.cost) > 0"
+                class="cost-preview"
+              >
+                Cost: {{ formatRupiah(form.cost) }}
+              </span>
             </div>
-          </div>
-
-          <!-- Active toggle -->
-          <div class="toggle-row">
-            <div>
-              <p class="toggle-label">Active Status</p>
-              <p class="toggle-desc">
-                Inactive products won't appear in transactions
-              </p>
-            </div>
-            <button
-              type="button"
-              class="toggle-btn"
-              :class="{ 'toggle-btn--on': form.is_active }"
-              @click="form.is_active = !form.is_active"
-              :aria-label="form.is_active ? 'Deactivate' : 'Activate'"
-            >
-              <span class="toggle-btn__thumb" />
-            </button>
           </div>
         </FormSection>
 
-        <!-- Pricing -->
+        <!-- Pricing Per Category -->
         <FormSection
-          title="Pricing Per Category"
-          subtitle="Set different prices for each customer category"
+          title="Selling Prices Per Category"
+          subtitle="Set selling prices — margin is calculated from cost price"
         >
           <div class="price-note">
             <svg
@@ -175,36 +259,36 @@ const categoryColors: Record<string, string> = {
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            Prices are applied automatically based on the customer's category
-            during a transaction.
+            Prices are applied based on the customer's category during a
+            transaction.
           </div>
 
           <div class="price-table">
             <div class="price-row price-row--header">
               <span>Category</span>
-              <span>Price (IDR)</span>
+              <span>Selling Price (IDR)</span>
               <span>Preview</span>
+              <span>Margin</span>
             </div>
             <div
-              v-for="(p, i) in form.prices"
-              :key="p.category"
+              v-for="(p, i) in priceInputs"
+              :key="p.categoryId"
               class="price-row"
             >
               <div class="price-cat">
                 <span
                   class="price-cat__dot"
-                  :style="{ background: categoryColors[p.category] }"
+                  :style="{ background: catColor(p.code) }"
                 />
                 <span
                   class="price-cat__name"
-                  :style="{ color: categoryColors[p.category] }"
+                  :style="{ color: catColor(p.code) }"
+                  >{{ p.categoryName }}</span
                 >
-                  {{ p.category }}
-                </span>
               </div>
               <div class="field-group" style="margin: 0">
                 <InputText
-                  v-model.number="p.price"
+                  v-model="p.amount"
                   type="number"
                   min="0"
                   placeholder="0"
@@ -215,9 +299,11 @@ const categoryColors: Record<string, string> = {
                   errors.prices[i]
                 }}</span>
               </div>
-              <span class="price-preview">{{
-                p.price > 0 ? formatRupiah(p.price) : "—"
-              }}</span>
+              <span class="price-preview">{{ previewAmount(p.amount) }}</span>
+              <span v-if="margin(p.amount)" class="margin-badge">
+                +{{ margin(p.amount)!.pct }}%
+              </span>
+              <span v-else class="margin-empty">—</span>
             </div>
           </div>
         </FormSection>
@@ -271,7 +357,11 @@ const categoryColors: Record<string, string> = {
   flex-direction: column;
   gap: 20px;
 }
-
+.form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -291,13 +381,6 @@ const categoryColors: Record<string, string> = {
 .btn-secondary:hover {
   background: #f8fafc;
 }
-
-.form-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .field-group {
   display: flex;
   flex-direction: column;
@@ -321,68 +404,66 @@ const categoryColors: Record<string, string> = {
   color: #dc2626;
 }
 
-:deep(.p-inputtext) {
-  font-family: "Geist", sans-serif;
-  font-size: 14px;
-  border-radius: 8px;
-  border-color: #e2e8f0;
+/* SKU row */
+.sku-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-:deep(.p-inputtext:enabled:focus) {
+.sku-select {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+  appearance: auto;
+}
+.sku-select:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
-:deep(.p-invalid.p-inputtext) {
+.sku-select--error {
   border-color: #ef4444;
 }
-
-/* Active toggle */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 0;
-  border-top: 1px solid #f1f5f9;
-  gap: 16px;
-}
-.toggle-label {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: #0f172a;
-  margin: 0 0 2px;
-}
-.toggle-desc {
-  font-size: 12px;
-  color: #64748b;
-  margin: 0;
-}
-
-.toggle-btn {
-  width: 44px;
-  height: 24px;
-  border-radius: 99px;
-  background: #e2e8f0;
-  border: none;
-  cursor: pointer;
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  transition: background 0.2s;
+.sku-sep {
+  font-size: 16px;
+  color: #94a3b8;
+  font-weight: 600;
   flex-shrink: 0;
 }
-.toggle-btn--on {
-  background: #2563eb;
-  justify-content: flex-end;
+.sku-suffix {
+  width: 180px !important;
 }
-.toggle-btn__thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  transition: transform 0.2s;
+.sku-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #475569;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+.sku-preview strong {
+  color: #0f172a;
+  font-family: "Geist Mono", monospace;
+}
+.cost-preview {
+  font-size: 12px;
+  color: #16a34a;
+  font-weight: 500;
 }
 
-/* Pricing */
+/* Price table */
 .price-note {
   display: flex;
   align-items: flex-start;
@@ -395,17 +476,15 @@ const categoryColors: Record<string, string> = {
   color: #1e40af;
   line-height: 1.5;
 }
-
 .price-table {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 .price-row {
   display: grid;
-  grid-template-columns: 140px 1fr 140px;
+  grid-template-columns: 140px 1fr 130px 90px;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   padding: 12px 0;
   border-bottom: 1px solid #f1f5f9;
 }
@@ -420,7 +499,6 @@ const categoryColors: Record<string, string> = {
   text-transform: uppercase;
   padding-bottom: 8px;
 }
-
 .price-cat {
   display: flex;
   align-items: center;
@@ -436,23 +514,45 @@ const categoryColors: Record<string, string> = {
   font-size: 13.5px;
   font-weight: 600;
 }
-
 .price-preview {
   font-family: "Geist Mono", monospace;
   font-size: 13px;
   color: #64748b;
-  text-align: right;
+}
+.margin-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  background: #f0fdf4;
+  color: #16a34a;
+  border-radius: 99px;
+  text-align: center;
+}
+.margin-empty {
+  color: #94a3b8;
+  font-size: 13px;
 }
 
-/* Actions */
+:deep(.p-inputtext) {
+  font-family: "Geist", sans-serif;
+  font-size: 14px;
+  border-radius: 8px;
+  border-color: #e2e8f0;
+}
+:deep(.p-inputtext:enabled:focus) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+:deep(.p-invalid.p-inputtext) {
+  border-color: #ef4444;
+}
+
 .form-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  padding-top: 4px;
 }
-
 :deep(.btn-submit.p-button) {
   background: #2563eb;
   border-color: #2563eb;
@@ -472,14 +572,22 @@ const categoryColors: Record<string, string> = {
   align-items: center;
   gap: 7px;
 }
-
 @media (max-width: 640px) {
   .field-row {
     grid-template-columns: 1fr;
   }
+  .sku-row {
+    flex-wrap: wrap;
+  }
+  .sku-suffix {
+    width: 100% !important;
+  }
   .price-row {
-    grid-template-columns: 100px 1fr 100px;
-    gap: 10px;
+    grid-template-columns: 120px 1fr 100px;
+  }
+  .margin-badge,
+  .margin-empty {
+    display: none;
   }
 }
 </style>

@@ -1,36 +1,59 @@
 <script setup lang="ts">
-import { mockGetTransactions } from "~/mocks";
-import type { Transaction, Payment } from "~/mocks";
+import type { Transaction } from "../../../composables/useTransactions";
 
 definePageMeta({ layout: "dashboard" });
 
-interface PaymentRow extends Payment {
-  transaction_id: number;
-  customer_name: string;
-  transaction_total: number;
+const { $api } = useNuxtApp();
+const { formatRupiah, formatDate, paymentStatusColor } = useTransactions();
+const router = useRouter();
+
+interface PaymentRow {
+  id: string;
+  method: string;
+  amount: string;
+  currency: string;
+  paidAt: string;
+  senderName?: string;
+  reference?: string;
+  status: string;
+  transactionId: string;
 }
 
 const rows = ref<PaymentRow[]>([]);
 const isLoading = ref(true);
 const search = ref("");
 const filterMethod = ref<"all" | "cash" | "transfer">("all");
-const router = useRouter();
 
 onMounted(async () => {
-  const transactions = await mockGetTransactions();
-  rows.value = transactions
-    .flatMap((t) =>
-      t.payments.map((p) => ({
-        ...p,
-        transaction_id: t.id,
-        customer_name: t.customer_name,
-        transaction_total: t.total,
-      })),
-    )
-    .sort(
-      (a, b) => new Date(b.paid_at).getTime() - new Date(a.paid_at).getTime(),
+  try {
+    // Fetch all transactions then collect their payments via view
+    const res = await $api<{ items: Transaction[] }>("/transactions");
+    const transactions = res.items ?? [];
+
+    // Fetch view for each transaction to get payments
+    const views = await Promise.all(
+      transactions.map((t) =>
+        $api<any>(`/transactions/${t.id}/view`).catch(() => null),
+      ),
     );
-  isLoading.value = false;
+
+    rows.value = views
+      .filter(Boolean)
+      .flatMap((v) =>
+        (v.payments ?? []).map((p: any) => ({
+          ...p,
+          transactionId: v.id,
+        })),
+      )
+      .sort(
+        (a: PaymentRow, b: PaymentRow) =>
+          new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime(),
+      );
+  } catch {
+    rows.value = [];
+  } finally {
+    isLoading.value = false;
+  }
 });
 
 const filtered = computed(() => {
@@ -41,39 +64,25 @@ const filtered = computed(() => {
   if (!q) return list;
   return list.filter(
     (r) =>
-      r.customer_name.toLowerCase().includes(q) ||
-      String(r.transaction_id).includes(q),
+      r.transactionId.toLowerCase().includes(q) ||
+      r.senderName?.toLowerCase().includes(q) ||
+      r.reference?.toLowerCase().includes(q),
   );
 });
 
-// Summary stats
 const totalCollected = computed(() =>
-  rows.value.reduce((s, r) => s + r.amount, 0),
+  rows.value.reduce((s, r) => s + parseFloat(r.amount), 0),
 );
 const totalCash = computed(() =>
   rows.value
     .filter((r) => r.method === "cash")
-    .reduce((s, r) => s + r.amount, 0),
+    .reduce((s, r) => s + parseFloat(r.amount), 0),
 );
 const totalTransfer = computed(() =>
   rows.value
     .filter((r) => r.method === "transfer")
-    .reduce((s, r) => s + r.amount, 0),
+    .reduce((s, r) => s + parseFloat(r.amount), 0),
 );
-
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
-
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 </script>
 
 <template>
@@ -100,7 +109,7 @@ const formatDate = (d: string) =>
       </template>
     </PageHeader>
 
-    <!-- Summary strip -->
+    <!-- Summary -->
     <div class="summary-strip">
       <div class="strip-card">
         <p class="strip-val">{{ formatRupiah(totalCollected) }}</p>
@@ -120,13 +129,12 @@ const formatDate = (d: string) =>
       </div>
     </div>
 
-    <!-- Table -->
     <DataCard :loading="isLoading" :skeleton-rows="5">
       <template #toolbar>
         <div class="toolbar-left">
           <SearchInput
             v-model="search"
-            placeholder="Search by customer or transaction ID…"
+            placeholder="Search by transaction, sender, reference…"
           />
           <div class="filter-tabs">
             <button
@@ -143,61 +151,63 @@ const formatDate = (d: string) =>
           </div>
         </div>
         <span class="record-count"
-          >{{ filtered.length }} of {{ rows.length }} payments</span
+          >{{ filtered.length }} of {{ rows.length }}</span
         >
       </template>
 
-      <div class="table-wrap">
+      <div v-if="!isLoading && rows.length === 0" class="empty-state">
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.2"
+        >
+          <rect x="1" y="4" width="22" height="16" rx="2" />
+          <line x1="1" y1="10" x2="23" y2="10" />
+        </svg>
+        <p>No payments recorded yet</p>
+      </div>
+
+      <div v-else class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Payment ID</th>
               <th>Transaction</th>
-              <th>Customer</th>
               <th>Method</th>
               <th>Amount</th>
+              <th>Sender</th>
+              <th>Reference</th>
               <th>Date</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td colspan="7" class="empty-row">No payments found</td>
+              <td colspan="7" class="empty-row">No payments match filters</td>
             </tr>
             <tr v-for="r in filtered" :key="r.id">
-              <td class="td-id">PAY-{{ r.id }}</td>
               <td
                 class="td-link"
-                @click="router.push(`/admin/transactions/${r.transaction_id}`)"
+                @click="router.push(`/admin/transactions/${r.transactionId}`)"
               >
-                #{{ r.transaction_id }}
+                #{{ r.transactionId.slice(0, 8) }}…
               </td>
-              <td class="td-name">{{ r.customer_name }}</td>
               <td>
                 <span class="method-pill" :class="`method-pill--${r.method}`">
                   {{ r.method === "cash" ? "💵" : "🏦" }} {{ r.method }}
                 </span>
               </td>
-              <td><PriceDisplay :amount="r.amount" /></td>
-              <td class="td-muted">{{ formatDate(r.paid_at) }}</td>
+              <td class="td-amount">{{ formatRupiah(r.amount) }}</td>
+              <td class="td-muted">{{ r.senderName ?? "—" }}</td>
+              <td class="td-mono">{{ r.reference ?? "—" }}</td>
+              <td class="td-muted">{{ formatDate(r.paidAt) }}</td>
               <td>
                 <button
                   class="view-btn"
-                  @click="
-                    router.push(`/admin/transactions/${r.transaction_id}`)
-                  "
+                  @click="router.push(`/admin/transactions/${r.transactionId}`)"
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
                   View Transaction
                 </button>
               </td>
@@ -215,8 +225,27 @@ const formatDate = (d: string) =>
   flex-direction: column;
   gap: 20px;
 }
-
-/* Summary strip */
+.btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 1px 6px rgba(37, 99, 235, 0.25);
+  transition:
+    background 0.15s,
+    transform 0.12s;
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
 .summary-strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -246,8 +275,6 @@ const formatDate = (d: string) =>
   color: #94a3b8;
   margin: 0;
 }
-
-/* Toolbar */
 .toolbar-left {
   display: flex;
   align-items: center;
@@ -285,8 +312,14 @@ const formatDate = (d: string) =>
   color: #94a3b8;
   white-space: nowrap;
 }
-
-/* Table */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px;
+  color: #94a3b8;
+}
 .table-wrap {
   overflow-x: auto;
 }
@@ -317,13 +350,17 @@ const formatDate = (d: string) =>
 .data-table tbody tr:hover td {
   background: #f8fafc;
 }
-
-.td-id {
+.td-link {
   font-family: "Geist Mono", monospace;
-  font-size: 12px;
-  color: #94a3b8;
+  font-weight: 500;
+  color: #2563eb;
+  cursor: pointer;
 }
-.td-name {
+.td-link:hover {
+  text-decoration: underline;
+}
+.td-amount {
+  font-family: "Geist Mono", monospace;
   font-weight: 500;
   color: #0f172a;
 }
@@ -331,17 +368,11 @@ const formatDate = (d: string) =>
   color: #64748b;
   font-size: 12.5px;
 }
-.td-link {
+.td-mono {
   font-family: "Geist Mono", monospace;
-  font-weight: 500;
-  color: #2563eb;
-  cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
+  color: #64748b;
 }
-.td-link:hover {
-  text-decoration: underline;
-}
-
 .method-pill {
   display: inline-block;
   padding: 3px 9px;
@@ -358,13 +389,11 @@ const formatDate = (d: string) =>
   background: #eff6ff;
   color: #2563eb;
 }
-
 .empty-row {
   text-align: center;
   color: #94a3b8;
   padding: 40px !important;
 }
-
 .view-btn {
   display: inline-flex;
   align-items: center;
@@ -379,20 +408,13 @@ const formatDate = (d: string) =>
   cursor: pointer;
   font-family: inherit;
   transition: background 0.12s;
-  white-space: nowrap;
 }
 .view-btn:hover {
   background: #dbeafe;
 }
-
 @media (max-width: 1100px) {
   .summary-strip {
     grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 640px) {
-  .summary-strip {
-    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

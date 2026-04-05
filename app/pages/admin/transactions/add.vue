@@ -1,88 +1,172 @@
 <script setup lang="ts">
-import { mockGetCustomers, mockGetProducts } from "~/mocks";
-import type { Customer, Product } from "~/mocks";
+import type { Product } from "../../../composables/useProducts";
 
 definePageMeta({ layout: "dashboard" });
 
+const { $api } = useNuxtApp();
+const { fetchCategories, categories, getCategoryName } = useCategories();
+const { fetchPrices, formatRupiah } = useProducts();
 const router = useRouter();
+
 const isLoading = ref(true);
 const isSaving = ref(false);
 const showConfirmLeave = ref(false);
 
+// Step 1 — customer
+interface Customer {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  categoryId?: string;
+}
 const customers = ref<Customer[]>([]);
-const products = ref<Product[]>([]);
-
 const selectedCustomer = ref<Customer | null>(null);
-const items = ref<
-  { product: Product; qty: number; unit_price: number; subtotal: number }[]
->([]);
+const customerSearch = ref("");
+const isFetchingCustomer = ref(false);
+
+// Step 2 — products
+const products = ref<Product[]>([]);
+const priceMap = ref<Record<string, Record<string, string>>>({});
 const showProductPicker = ref(false);
 
+interface CartItem {
+  product: Product;
+  qty: number;
+  unitPrice: string;
+}
+const cart = ref<CartItem[]>([]);
+
+// Step 3 — options
+const notes = ref("");
+const status = ref<"draft" | "pending">("pending");
+
 onMounted(async () => {
-  const [c, p] = await Promise.all([mockGetCustomers(), mockGetProducts()]);
-  customers.value = c;
-  products.value = p.filter((p) => p.is_active && p.stock > 0);
-  isLoading.value = false;
+  await fetchCategories();
+  try {
+    const [cRes, pRes] = await Promise.all([
+      $api<{ items: Customer[] }>("/customers"),
+      $api<{ items: Product[] }>("/products"),
+    ]);
+    customers.value = cRes.items ?? [];
+    products.value = (pRes.items ?? []).filter((p) => p.isActive);
+
+    // Fetch prices for all products upfront
+    await Promise.all(
+      products.value.map(async (p) => {
+        try {
+          const prices = await fetchPrices(p.id);
+          priceMap.value[p.id] = Object.fromEntries(
+            prices
+              .filter((pr) => pr.categoryId)
+              .map((pr) => [pr.categoryId!, pr.amount]),
+          );
+        } catch {
+          priceMap.value[p.id] = {};
+        }
+      }),
+    );
+  } catch (err) {
+    console.error(err);
+  } finally {
+    isLoading.value = false;
+  }
 });
 
-// Get price for selected customer's category
-const priceForCustomer = (product: Product) => {
-  if (!selectedCustomer.value)
-    return product.prices.find((p) => p.category === "Regular")?.price ?? 0;
-  return (
-    product.prices.find((p) => p.category === selectedCustomer.value!.category)
-      ?.price ?? 0
+const filteredCustomers = computed(() => {
+  const q = customerSearch.value.toLowerCase().trim();
+  if (!q) return customers.value;
+  return customers.value.filter((c) =>
+    `${c.firstName} ${c.lastName ?? ""}`.toLowerCase().includes(q),
   );
+});
+
+const fullName = (c: Customer) =>
+  [c.firstName, c.lastName].filter(Boolean).join(" ");
+
+// When a customer is selected, fetch their full detail to get categoryId
+const selectCustomer = async (c: Customer) => {
+  cart.value = [];
+  showProductPicker.value = false;
+
+  // If we already have categoryId from the list, use it directly
+  if (c.categoryId) {
+    selectedCustomer.value = c;
+    return;
+  }
+
+  // Otherwise fetch the full customer detail
+  isFetchingCustomer.value = true;
+  try {
+    const full = await $api<Customer>(`/customers/${c.id}`);
+    selectedCustomer.value = full;
+    // Update the customer in the list too for future selections
+    const idx = customers.value.findIndex((x) => x.id === c.id);
+    if (idx !== -1) customers.value[idx] = full;
+  } catch {
+    selectedCustomer.value = c;
+  } finally {
+    isFetchingCustomer.value = false;
+  }
 };
 
-const addProduct = (product: Product) => {
-  const existing = items.value.find((i) => i.product.id === product.id);
-  if (existing) {
-    existing.qty++;
-    existing.subtotal = existing.qty * existing.unit_price;
-  } else {
-    const unit_price = priceForCustomer(product);
-    items.value.push({ product, qty: 1, unit_price, subtotal: unit_price });
-  }
+const getPriceForCustomer = (productId: string): string | null => {
+  if (!selectedCustomer.value?.categoryId) return null;
+  return priceMap.value[productId]?.[selectedCustomer.value.categoryId] ?? null;
+};
+
+const cartProductIds = computed(() => cart.value.map((i) => i.product.id));
+
+const availableProducts = computed(() =>
+  products.value.filter(
+    (p) =>
+      !cartProductIds.value.includes(p.id) &&
+      getPriceForCustomer(p.id) !== null,
+  ),
+);
+
+const addToCart = (product: Product) => {
+  const price = getPriceForCustomer(product.id);
+  if (!price) return;
+  cart.value.push({ product, qty: 1, unitPrice: price });
   showProductPicker.value = false;
 };
 
-const removeItem = (index: number) => items.value.splice(index, 1);
+const removeFromCart = (index: number) => cart.value.splice(index, 1);
 
 const updateQty = (index: number, qty: number) => {
   if (qty < 1) return;
-  items.value[index].qty = qty;
-  items.value[index].subtotal = qty * items.value[index].unit_price;
+  cart.value[index].qty = qty;
 };
 
 const grandTotal = computed(() =>
-  items.value.reduce((s, i) => s + i.subtotal, 0),
+  cart.value.reduce((s, i) => s + parseFloat(i.unitPrice) * i.qty, 0),
 );
 
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
-
-const canSave = computed(
-  () => selectedCustomer.value && items.value.length > 0,
-);
+const canSave = computed(() => selectedCustomer.value && cart.value.length > 0);
 
 const handleSave = async () => {
   if (!canSave.value) return;
   isSaving.value = true;
-  // TODO: POST /api/v1/transactions
-  await new Promise((r) => setTimeout(r, 800));
-  isSaving.value = false;
-  router.push("/admin/transactions");
+  try {
+    await $api("/transactions", {
+      method: "POST",
+      body: {
+        customerId: selectedCustomer.value!.id,
+        status: status.value,
+        notes: notes.value.trim() || undefined,
+        items: cart.value.map((i) => ({
+          productId: i.product.id,
+          qty: i.qty,
+        })),
+      },
+    });
+    router.push("/admin/transactions");
+  } catch (err: any) {
+    console.error("Failed to create transaction:", err);
+  } finally {
+    isSaving.value = false;
+  }
 };
-
-// Products not yet added
-const availableProducts = computed(() =>
-  products.value.filter((p) => !items.value.find((i) => i.product.id === p.id)),
-);
 </script>
 
 <template>
@@ -117,26 +201,44 @@ const availableProducts = computed(() =>
           title="1. Select Customer"
           subtitle="Choose who this transaction is for"
         >
+          <SearchInput
+            v-model="customerSearch"
+            placeholder="Search customer…"
+          />
           <div class="customer-grid">
             <div
-              v-for="c in customers"
+              v-for="c in filteredCustomers"
               :key="c.id"
               class="customer-card"
               :class="{
                 'customer-card--active': selectedCustomer?.id === c.id,
+                'customer-card--loading':
+                  isFetchingCustomer && selectedCustomer?.id === c.id,
               }"
-              @click="selectedCustomer = c"
+              @click="selectCustomer(c)"
             >
-              <div class="customer-card__avatar">
-                {{ c.name.slice(0, 2).toUpperCase() }}
+              <div class="customer-avatar">
+                {{ c.firstName.slice(0, 2).toUpperCase() }}
               </div>
-              <div class="customer-card__info">
-                <p class="customer-card__name">{{ c.name }}</p>
-                <CategoryBadge :category="c.category" />
+              <div class="customer-info">
+                <p class="customer-name">{{ fullName(c) }}</p>
+                <CategoryBadge
+                  v-if="
+                    c.categoryId ||
+                    (selectedCustomer?.id === c.id &&
+                      selectedCustomer?.categoryId)
+                  "
+                  :category="
+                    getCategoryName(
+                      c.categoryId ?? selectedCustomer?.categoryId,
+                    )
+                  "
+                />
+                <span v-else class="no-category">No category</span>
               </div>
               <div
-                v-if="selectedCustomer?.id === c.id"
-                class="customer-card__check"
+                v-if="selectedCustomer?.id === c.id && !isFetchingCustomer"
+                class="customer-check"
               >
                 <svg
                   width="11"
@@ -149,34 +251,55 @@ const availableProducts = computed(() =>
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </div>
+              <div
+                v-if="isFetchingCustomer && selectedCustomer?.id === c.id"
+                class="customer-loading"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  class="spin"
+                >
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+              </div>
             </div>
           </div>
           <p v-if="!selectedCustomer" class="field-hint">
             Select a customer to continue
+          </p>
+          <p v-else-if="!selectedCustomer.categoryId" class="field-warn">
+            ⚠️ This customer has no pricing category — no prices can be applied.
+            <NuxtLink :to="`/admin/customers/${selectedCustomer.id}/edit`"
+              >Assign a category →</NuxtLink
+            >
           </p>
         </FormSection>
 
         <!-- Step 2: Items -->
         <FormSection
           title="2. Add Items"
-          subtitle="Add products to this transaction"
+          subtitle="Prices auto-apply based on customer category"
         >
-          <!-- Item list -->
-          <div v-if="items.length > 0" class="item-list">
-            <div class="item-list__header">
+          <div v-if="cart.length > 0" class="cart-list">
+            <div class="cart-header">
               <span>Product</span><span>Unit Price</span><span>Qty</span
               ><span>Subtotal</span><span />
             </div>
             <div
-              v-for="(item, i) in items"
+              v-for="(item, i) in cart"
               :key="item.product.id"
-              class="item-row"
+              class="cart-row"
             >
-              <div class="item-row__name">
-                <p class="item-name">{{ item.product.name }}</p>
-                <p class="item-sku">{{ item.product.sku }}</p>
+              <div>
+                <p class="cart-name">{{ item.product.name }}</p>
+                <p class="cart-sku">{{ item.product.sku ?? "—" }}</p>
               </div>
-              <PriceDisplay :amount="item.unit_price" size="sm" muted />
+              <span class="cart-price">{{ formatRupiah(item.unitPrice) }}</span>
               <div class="qty-control">
                 <button
                   type="button"
@@ -194,16 +317,17 @@ const availableProducts = computed(() =>
                   +
                 </button>
               </div>
-              <PriceDisplay :amount="item.subtotal" />
+              <span class="cart-subtotal">{{
+                formatRupiah(parseFloat(item.unitPrice) * item.qty)
+              }}</span>
               <button
                 type="button"
                 class="remove-btn"
-                @click="removeItem(i)"
-                aria-label="Remove"
+                @click="removeFromCart(i)"
               >
                 <svg
-                  width="14"
-                  height="14"
+                  width="13"
+                  height="13"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -216,11 +340,15 @@ const availableProducts = computed(() =>
             </div>
           </div>
 
-          <!-- Add product button -->
           <button
+            v-if="!showProductPicker"
             type="button"
             class="add-item-btn"
-            :disabled="!selectedCustomer || availableProducts.length === 0"
+            :disabled="
+              !selectedCustomer ||
+              !selectedCustomer.categoryId ||
+              availableProducts.length === 0
+            "
             @click="showProductPicker = true"
           >
             <svg
@@ -234,16 +362,20 @@ const availableProducts = computed(() =>
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Add Product
+            <span v-if="!selectedCustomer">Select a customer first</span>
+            <span v-else-if="!selectedCustomer.categoryId"
+              >Customer has no category</span
+            >
+            <span v-else-if="availableProducts.length === 0"
+              >No products with prices for this category</span
+            >
+            <span v-else>Add Product</span>
           </button>
-          <p v-if="!selectedCustomer" class="field-hint">
-            Select a customer first to see their prices
-          </p>
 
           <!-- Product picker -->
           <div v-if="showProductPicker" class="product-picker">
-            <div class="product-picker__header">
-              <span>Select a product</span>
+            <div class="product-picker__head">
+              <span>Select product</span>
               <button
                 type="button"
                 class="picker-close"
@@ -257,30 +389,69 @@ const availableProducts = computed(() =>
                 v-for="p in availableProducts"
                 :key="p.id"
                 class="picker-item"
-                @click="addProduct(p)"
+                @click="addToCart(p)"
               >
                 <div>
-                  <p class="picker-item__name">{{ p.name }}</p>
-                  <p class="picker-item__sku">
-                    {{ p.sku }} · Stock: {{ p.stock }}
+                  <p class="picker-name">{{ p.name }}</p>
+                  <p class="picker-sku">
+                    {{ p.sku ?? "—" }} · Stock: {{ p.stockOnHand }}
                   </p>
                 </div>
-                <PriceDisplay :amount="priceForCustomer(p)" size="sm" />
+                <span class="picker-price">{{
+                  formatRupiah(getPriceForCustomer(p.id)!)
+                }}</span>
               </div>
               <p v-if="availableProducts.length === 0" class="picker-empty">
-                All products already added
+                No products available
               </p>
             </div>
           </div>
+
+          <!-- Grand total -->
+          <div v-if="cart.length > 0" class="grand-total">
+            <span>Grand Total</span>
+            <span class="grand-total__val">{{ formatRupiah(grandTotal) }}</span>
+          </div>
         </FormSection>
 
-        <!-- Order summary -->
-        <div v-if="items.length > 0" class="order-summary">
-          <div class="order-summary__row order-summary__row--total">
-            <span>Grand Total</span>
-            <PriceDisplay :amount="grandTotal" size="lg" />
+        <!-- Step 3: Options -->
+        <FormSection title="3. Options" subtitle="Status and notes">
+          <div class="field-group">
+            <label class="field-label">Initial Status</label>
+            <div class="status-tabs">
+              <button
+                v-for="s in ['draft', 'pending'] as const"
+                :key="s"
+                type="button"
+                class="status-tab"
+                :class="{ 'status-tab--active': status === s }"
+                @click="status = s"
+              >
+                <span
+                  class="status-tab__dot"
+                  :class="`status-tab__dot--${s}`"
+                />
+                {{ s.charAt(0).toUpperCase() + s.slice(1) }}
+              </button>
+            </div>
+            <p class="field-hint">
+              <template v-if="status === 'draft'"
+                >Draft — no stock reserved yet</template
+              >
+              <template v-else
+                >Pending — stock will be reserved immediately</template
+              >
+            </p>
           </div>
-        </div>
+          <div class="field-group">
+            <label class="field-label">Notes (optional)</label>
+            <InputText
+              v-model="notes"
+              placeholder="e.g. Urgent delivery, paid in advance"
+              fluid
+            />
+          </div>
+        </FormSection>
 
         <!-- Actions -->
         <div class="form-actions">
@@ -323,7 +494,7 @@ const availableProducts = computed(() =>
     <ConfirmDialog
       v-model="showConfirmLeave"
       title="Discard transaction?"
-      description="You have unsaved items. Are you sure you want to leave?"
+      description="You have unsaved changes. Are you sure you want to leave?"
       confirm-label="Yes, Discard"
       @confirm="router.push('/admin/transactions')"
     />
@@ -341,7 +512,6 @@ const availableProducts = computed(() =>
   flex-direction: column;
   gap: 16px;
 }
-
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -361,18 +531,53 @@ const availableProducts = computed(() =>
 .btn-secondary:hover {
   background: #f8fafc;
 }
-
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+}
 .field-hint {
   font-size: 12px;
   color: #94a3b8;
-  margin: 4px 0 0;
+  margin: 2px 0 0;
+}
+.field-warn {
+  font-size: 12.5px;
+  color: #854d0e;
+  background: #fef9c3;
+  padding: 8px 12px;
+  border-radius: 7px;
+  border: 1px solid #fde68a;
+}
+.field-warn a {
+  color: #2563eb;
+}
+.no-category {
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+:deep(.p-inputtext) {
+  font-family: "Geist", sans-serif;
+  font-size: 14px;
+  border-radius: 8px;
+  border-color: #e2e8f0;
+}
+:deep(.p-inputtext:enabled:focus) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
 /* Customer grid */
 .customer-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
 }
 .customer-card {
   display: flex;
@@ -395,9 +600,12 @@ const availableProducts = computed(() =>
   border-color: #3b82f6;
   background: #eff6ff;
 }
-.customer-card__avatar {
-  width: 32px;
-  height: 32px;
+.customer-card--loading {
+  opacity: 0.7;
+}
+.customer-avatar {
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: linear-gradient(145deg, #3b82f6, #1d4ed8);
   display: flex;
@@ -408,18 +616,18 @@ const availableProducts = computed(() =>
   color: #fff;
   flex-shrink: 0;
 }
-.customer-card__name {
+.customer-name {
   font-size: 13px;
   font-weight: 500;
   color: #0f172a;
   margin: 0 0 4px;
 }
-.customer-card__check {
+.customer-check {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #2563eb;
   color: #fff;
@@ -427,18 +635,30 @@ const availableProducts = computed(() =>
   align-items: center;
   justify-content: center;
 }
+.customer-loading {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: #3b82f6;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
 
-/* Item list */
-.item-list {
-  display: flex;
-  flex-direction: column;
+/* Cart */
+.cart-list {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   overflow: hidden;
 }
-.item-list__header {
+.cart-header {
   display: grid;
-  grid-template-columns: 1fr 120px 100px 120px 32px;
+  grid-template-columns: 1fr 120px 110px 120px 32px;
   gap: 12px;
   padding: 8px 14px;
   background: #f8fafc;
@@ -448,27 +668,37 @@ const availableProducts = computed(() =>
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.item-row {
+.cart-row {
   display: grid;
-  grid-template-columns: 1fr 120px 100px 120px 32px;
+  grid-template-columns: 1fr 120px 110px 120px 32px;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
   border-top: 1px solid #f1f5f9;
 }
-.item-name {
+.cart-name {
   font-size: 13.5px;
   font-weight: 500;
   color: #0f172a;
   margin: 0 0 2px;
 }
-.item-sku {
+.cart-sku {
   font-family: "Geist Mono", monospace;
   font-size: 11px;
   color: #94a3b8;
   margin: 0;
 }
-
+.cart-price {
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  color: #64748b;
+}
+.cart-subtotal {
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+}
 .qty-control {
   display: flex;
   align-items: center;
@@ -482,7 +712,6 @@ const availableProducts = computed(() =>
   background: #fff;
   cursor: pointer;
   font-size: 16px;
-  font-weight: 500;
   color: #475569;
   display: flex;
   align-items: center;
@@ -495,11 +724,9 @@ const availableProducts = computed(() =>
 .qty-val {
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
-  min-width: 20px;
+  min-width: 24px;
   text-align: center;
 }
-
 .remove-btn {
   width: 28px;
   height: 28px;
@@ -517,7 +744,7 @@ const availableProducts = computed(() =>
   background: #fee2e2;
 }
 
-/* Add product */
+/* Add item button */
 .add-item-btn {
   display: inline-flex;
   align-items: center;
@@ -550,9 +777,8 @@ const availableProducts = computed(() =>
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
-.product-picker__header {
+.product-picker__head {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -569,7 +795,6 @@ const availableProducts = computed(() =>
   cursor: pointer;
   color: #94a3b8;
   font-size: 14px;
-  transition: color 0.15s;
 }
 .picker-close:hover {
   color: #0f172a;
@@ -593,17 +818,23 @@ const availableProducts = computed(() =>
 .picker-item:hover {
   background: #f8fafc;
 }
-.picker-item__name {
+.picker-name {
   font-size: 13.5px;
   font-weight: 500;
   color: #0f172a;
   margin: 0 0 2px;
 }
-.picker-item__sku {
+.picker-sku {
   font-family: "Geist Mono", monospace;
   font-size: 11px;
   color: #94a3b8;
   margin: 0;
+}
+.picker-price {
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2563eb;
 }
 .picker-empty {
   padding: 16px;
@@ -612,22 +843,61 @@ const availableProducts = computed(() =>
   font-size: 13px;
 }
 
-/* Order summary */
-.order-summary {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 16px 20px;
-}
-.order-summary__row {
+/* Grand total */
+.grand-total {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-.order-summary__row--total {
-  font-size: 15px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 600;
   color: #0f172a;
+}
+.grand-total__val {
+  font-family: "Geist Mono", monospace;
+  font-size: 18px;
+}
+
+/* Status tabs */
+.status-tabs {
+  display: flex;
+  gap: 8px;
+}
+.status-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.status-tab--active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.status-tab__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-tab__dot--draft {
+  background: #94a3b8;
+}
+.status-tab__dot--pending {
+  background: #d97706;
 }
 
 /* Actions */
@@ -659,12 +929,11 @@ const availableProducts = computed(() =>
   align-items: center;
   gap: 7px;
 }
-
 @media (max-width: 768px) {
-  .item-list__header {
+  .cart-header {
     display: none;
   }
-  .item-row {
+  .cart-row {
     grid-template-columns: 1fr 80px 32px;
   }
 }

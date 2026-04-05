@@ -1,18 +1,32 @@
 <script setup lang="ts">
-import { mockGetTransactions } from "~/mocks";
-import type { Transaction } from "~/mocks";
+import type { Transaction } from "../../../composables/useTransactions";
 
 definePageMeta({ layout: "dashboard" });
 
-const transactions = ref<Transaction[]>([]);
-const isLoading = ref(true);
-const search = ref("");
-const filterStatus = ref<"all" | "pending" | "fulfilled" | "cancelled">("all");
+const { $api } = useNuxtApp();
+const { formatRupiah, formatDate, statusColor, paymentStatusColor } =
+  useTransactions();
 const router = useRouter();
 
+const transactions = ref<Transaction[]>([]);
+const isLoading = ref(true);
+const isEmpty = ref(false);
+const search = ref("");
+const filterStatus = ref<
+  "all" | "draft" | "pending" | "completed" | "cancelled"
+>("all");
+
 onMounted(async () => {
-  transactions.value = await mockGetTransactions();
-  isLoading.value = false;
+  try {
+    const res = await $api<{ items: Transaction[] }>("/transactions");
+    transactions.value = res.items ?? [];
+  } catch (err: any) {
+    // Backend returns 500 when empty — treat as empty list
+    transactions.value = [];
+    isEmpty.value = true;
+  } finally {
+    isLoading.value = false;
+  }
 });
 
 const filtered = computed(() => {
@@ -21,46 +35,26 @@ const filtered = computed(() => {
     list = list.filter((t) => t.status === filterStatus.value);
   const q = search.value.toLowerCase().trim();
   if (!q) return list;
-  return list.filter(
-    (t) =>
-      t.customer_name.toLowerCase().includes(q) || String(t.id).includes(q),
-  );
+  return list.filter((t) => t.id.toLowerCase().includes(q));
 });
 
 // Summary stats
 const totalRevenue = computed(() =>
   transactions.value
-    .filter((t) => t.payment_status === "paid")
-    .reduce((s, t) => s + t.total, 0),
+    .filter((t) => t.status === "completed")
+    .reduce((s, t) => s + parseFloat(t.totalAmount), 0),
 );
-const totalPending = computed(
+const pendingCount = computed(
   () => transactions.value.filter((t) => t.status === "pending").length,
 );
-const totalUnpaid = computed(() =>
-  transactions.value.reduce((s, t) => s + (t.total - t.total_paid), 0),
+const draftCount = computed(
+  () => transactions.value.filter((t) => t.status === "draft").length,
 );
-
-const formatRupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
-
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 </script>
 
 <template>
   <div class="page">
-    <PageHeader
-      title="Transactions"
-      subtitle="Manage orders, fulfillment and payment status"
-    >
+    <PageHeader title="Transactions" subtitle="Manage orders and fulfillment">
       <template #action>
         <NuxtLink to="/admin/transactions/add" class="btn-primary">
           <svg
@@ -83,15 +77,15 @@ const formatDate = (d: string) =>
     <div class="summary-strip">
       <div class="strip-card">
         <p class="strip-val">{{ formatRupiah(totalRevenue) }}</p>
-        <p class="strip-lbl">Total Collected</p>
+        <p class="strip-lbl">Completed Revenue</p>
       </div>
       <div class="strip-card strip-card--warn">
-        <p class="strip-val">{{ totalPending }}</p>
+        <p class="strip-val">{{ pendingCount }}</p>
         <p class="strip-lbl">Pending Orders</p>
       </div>
-      <div class="strip-card strip-card--danger">
-        <p class="strip-val">{{ formatRupiah(totalUnpaid) }}</p>
-        <p class="strip-lbl">Outstanding Balance</p>
+      <div class="strip-card">
+        <p class="strip-val">{{ draftCount }}</p>
+        <p class="strip-lbl">Draft Orders</p>
       </div>
       <div class="strip-card">
         <p class="strip-val">{{ transactions.length }}</p>
@@ -99,17 +93,22 @@ const formatDate = (d: string) =>
       </div>
     </div>
 
-    <!-- Table -->
     <DataCard :loading="isLoading" :skeleton-rows="5">
       <template #toolbar>
         <div class="toolbar-left">
           <SearchInput
             v-model="search"
-            placeholder="Search by customer or ID…"
+            placeholder="Search by transaction ID…"
           />
           <div class="filter-tabs">
             <button
-              v-for="f in ['all', 'pending', 'fulfilled', 'cancelled'] as const"
+              v-for="f in [
+                'all',
+                'draft',
+                'pending',
+                'completed',
+                'cancelled',
+              ] as const"
               :key="f"
               class="filter-tab"
               :class="{ 'filter-tab--active': filterStatus === f }"
@@ -124,41 +123,60 @@ const formatDate = (d: string) =>
         >
       </template>
 
-      <div class="table-wrap">
+      <!-- Empty state -->
+      <div v-if="!isLoading && transactions.length === 0" class="empty-state">
+        <svg
+          width="36"
+          height="36"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.2"
+        >
+          <path
+            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+          />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        <p>No transactions yet</p>
+        <NuxtLink
+          to="/admin/transactions/add"
+          class="btn-primary btn-primary--sm"
+        >
+          Create first transaction
+        </NuxtLink>
+      </div>
+
+      <div v-else class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th>ID</th>
               <th>Customer</th>
               <th>Items</th>
               <th>Total</th>
-              <th>Paid</th>
               <th>Status</th>
-              <th>Payment</th>
               <th>Date</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td colspan="9" class="empty-row">No transactions found</td>
+              <td colspan="7" class="empty-row">
+                No transactions match filters
+              </td>
             </tr>
             <tr v-for="t in filtered" :key="t.id">
-              <td class="td-id">#{{ t.id }}</td>
-              <td class="td-name">{{ t.customer_name }}</td>
-              <td class="td-muted">
-                {{ t.items.length }} item{{ t.items.length !== 1 ? "s" : "" }}
-              </td>
-              <td><PriceDisplay :amount="t.total" /></td>
+              <td class="td-id">{{ t.id.slice(0, 8) }}…</td>
+              <td class="td-muted">{{ t.customerId.slice(0, 8) }}…</td>
+              <td class="td-muted">{{ t.items?.length ?? 0 }} item(s)</td>
+              <td class="td-amount">{{ formatRupiah(t.totalAmount) }}</td>
               <td>
-                <PriceDisplay
-                  :amount="t.total_paid"
-                  :muted="t.total_paid === 0"
-                />
+                <span class="status-badge" :style="statusColor(t.status)">
+                  {{ t.status }}
+                </span>
               </td>
-              <td><TransactionBadge :status="t.status" /></td>
-              <td><PaymentBadge :status="t.payment_status" /></td>
-              <td class="td-muted">{{ formatDate(t.created_at) }}</td>
+              <td class="td-muted">{{ formatDate(t.createdAt) }}</td>
               <td>
                 <ActionButtons
                   :hide-edit="true"
@@ -180,7 +198,6 @@ const formatDate = (d: string) =>
   flex-direction: column;
   gap: 20px;
 }
-
 .btn-primary {
   display: flex;
   align-items: center;
@@ -202,8 +219,10 @@ const formatDate = (d: string) =>
   background: #1d4ed8;
   transform: translateY(-1px);
 }
-
-/* Summary strip */
+.btn-primary--sm {
+  font-size: 13px;
+  padding: 7px 14px;
+}
 .summary-strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -218,9 +237,6 @@ const formatDate = (d: string) =>
 .strip-card--warn {
   border-left: 3px solid #d97706;
 }
-.strip-card--danger {
-  border-left: 3px solid #dc2626;
-}
 .strip-val {
   font-size: 20px;
   font-weight: 600;
@@ -233,8 +249,6 @@ const formatDate = (d: string) =>
   color: #94a3b8;
   margin: 0;
 }
-
-/* Toolbar */
 .toolbar-left {
   display: flex;
   align-items: center;
@@ -249,11 +263,11 @@ const formatDate = (d: string) =>
   border-radius: 7px;
 }
 .filter-tab {
-  padding: 4px 12px;
+  padding: 4px 10px;
   border: none;
   background: none;
   border-radius: 5px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: #64748b;
   cursor: pointer;
@@ -272,8 +286,18 @@ const formatDate = (d: string) =>
   color: #94a3b8;
   white-space: nowrap;
 }
-
-/* Table */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px;
+  color: #94a3b8;
+}
+.empty-state p {
+  font-size: 14px;
+  margin: 0;
+}
 .table-wrap {
   overflow-x: auto;
 }
@@ -304,34 +328,36 @@ const formatDate = (d: string) =>
 .data-table tbody tr:hover td {
   background: #f8fafc;
 }
-
 .td-id {
   font-family: "Geist Mono", monospace;
   font-size: 12px;
-  color: #94a3b8;
-}
-.td-name {
-  font-weight: 500;
-  color: #0f172a;
+  color: #64748b;
 }
 .td-muted {
   color: #64748b;
   font-size: 12.5px;
+}
+.td-amount {
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+  color: #0f172a;
+}
+.status-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: capitalize;
 }
 .empty-row {
   text-align: center;
   color: #94a3b8;
   padding: 40px !important;
 }
-
 @media (max-width: 1100px) {
   .summary-strip {
     grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 640px) {
-  .summary-strip {
-    grid-template-columns: 1fr 1fr;
   }
 }
 </style>
