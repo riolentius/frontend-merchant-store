@@ -1,29 +1,25 @@
-// ============================================================
-// app/composables/useProducts.ts
-// Shared product + price helpers
-// ============================================================
-
 export interface Product {
   id:            string
   sku?:          string
   name:          string
+  cost:          string
   isActive:      boolean
   stockOnHand:   number
   stockReserved: number
 }
 
 export interface ProductPrice {
-  id:         string
-  productId:  string
+  id:          string
+  productId:   string
   categoryId?: string
-  currency:   string
-  amount:     string   // decimal string e.g. "75000"
-  validFrom:  string
-  validTo?:   string
+  currency:    string
+  amount:      string
+  validFrom:   string
+  validTo?:    string
 }
 
 export const useProducts = () => {
-  const { $api } = useNuxtApp()
+  const { apiFetch } = useApiFetch()
 
   const formatRupiah = (amount: string | number) => {
     const n = typeof amount === 'string' ? parseFloat(amount) : amount
@@ -34,39 +30,40 @@ export const useProducts = () => {
 
   const todayISO = () => new Date().toISOString()
 
-  // Fetch prices for a product — handles { value: [], Count: 0 } shape
+  // Handles both plain array [] and { value: [] } response shapes
   const fetchPrices = async (productId: string): Promise<ProductPrice[]> => {
-    const res = await $api<{ value: ProductPrice[]; Count: number }>(
-      `/products/${productId}/prices`
-    )
-    return res.value ?? []
+    try {
+      const data = await apiFetch<any>(`/products/${productId}/prices`)
+      return Array.isArray(data) ? data : (data?.value ?? [])
+    } catch (err) {
+      console.error(`fetchPrices failed for ${productId}:`, err)
+      return []
+    }
   }
 
-  // Create prices for all 3 categories at once
   const createPrices = async (
     productId: string,
     prices: { categoryId: string; amount: string }[]
   ) => {
     await Promise.all(
       prices.map(p =>
-        $api(`/products/${productId}/prices`, {
+        apiFetch(`/products/${productId}/prices`, {
           method: 'POST',
-          body: {
+          body: JSON.stringify({
             categoryId: p.categoryId,
             currency:   'IDR',
             amount:     p.amount,
             validFrom:  todayISO(),
-          },
+          }),
         })
       )
     )
   }
 
-  // Update a single price
   const updatePrice = async (priceId: string, amount: string) => {
-    await $api(`/prices/${priceId}`, {
+    await apiFetch(`/prices/${priceId}`, {
       method: 'PATCH',
-      body: { amount, currency: 'IDR' },
+      body: JSON.stringify({ amount, currency: 'IDR' }),
     })
   }
 

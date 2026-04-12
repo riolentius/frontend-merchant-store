@@ -4,28 +4,29 @@ import type { Product } from "../../../composables/useProducts";
 definePageMeta({ layout: "dashboard" });
 
 const { $api } = useNuxtApp();
-const { fetchCategories, categories, getCategoryName } = useCategories();
-const { fetchPrices, formatRupiah } = useProducts();
+const { apiFetch } = useApiFetch();
+const { fetchCategories, getCategoryName } = useCategories();
+const { formatRupiah } = useProducts();
 const router = useRouter();
 
 const isLoading = ref(true);
 const isSaving = ref(false);
 const showConfirmLeave = ref(false);
 
-// Step 1 — customer
 interface Customer {
   id: string;
   firstName: string;
   lastName?: string;
   categoryId?: string;
 }
+
 const customers = ref<Customer[]>([]);
 const selectedCustomer = ref<Customer | null>(null);
 const customerSearch = ref("");
 const isFetchingCustomer = ref(false);
 
-// Step 2 — products
 const products = ref<Product[]>([]);
+// Plain non-reactive map first, then assign to ref at once
 const priceMap = ref<Record<string, Record<string, string>>>({});
 const showProductPicker = ref(false);
 
@@ -35,8 +36,6 @@ interface CartItem {
   unitPrice: string;
 }
 const cart = ref<CartItem[]>([]);
-
-// Step 3 — options
 const notes = ref("");
 const status = ref<"draft" | "pending">("pending");
 
@@ -50,21 +49,23 @@ onMounted(async () => {
     customers.value = cRes.items ?? [];
     products.value = (pRes.items ?? []).filter((p) => p.isActive);
 
-    // Fetch prices for all products upfront
-    await Promise.all(
-      products.value.map(async (p) => {
-        try {
-          const prices = await fetchPrices(p.id);
-          priceMap.value[p.id] = Object.fromEntries(
-            prices
-              .filter((pr) => pr.categoryId)
-              .map((pr) => [pr.categoryId!, pr.amount]),
-          );
-        } catch {
-          priceMap.value[p.id] = {};
+    // Build price map using useApiFetch (handles auth automatically)
+    const map: Record<string, Record<string, string>> = {};
+
+    for (const p of products.value) {
+      try {
+        const data = await apiFetch<any>(`/products/${p.id}/prices`);
+        const prices = Array.isArray(data) ? data : (data?.value ?? []);
+        map[p.id] = {};
+        for (const pr of prices) {
+          if (pr.categoryId) map[p.id][pr.categoryId] = pr.amount;
         }
-      }),
-    );
+      } catch {
+        map[p.id] = {};
+      }
+    }
+
+    priceMap.value = map;
   } catch (err) {
     console.error(err);
   } finally {
@@ -83,23 +84,17 @@ const filteredCustomers = computed(() => {
 const fullName = (c: Customer) =>
   [c.firstName, c.lastName].filter(Boolean).join(" ");
 
-// When a customer is selected, fetch their full detail to get categoryId
 const selectCustomer = async (c: Customer) => {
   cart.value = [];
   showProductPicker.value = false;
-
-  // If we already have categoryId from the list, use it directly
   if (c.categoryId) {
     selectedCustomer.value = c;
     return;
   }
-
-  // Otherwise fetch the full customer detail
   isFetchingCustomer.value = true;
   try {
     const full = await $api<Customer>(`/customers/${c.id}`);
     selectedCustomer.value = full;
-    // Update the customer in the list too for future selections
     const idx = customers.value.findIndex((x) => x.id === c.id);
     if (idx !== -1) customers.value[idx] = full;
   } catch {
@@ -111,7 +106,9 @@ const selectCustomer = async (c: Customer) => {
 
 const getPriceForCustomer = (productId: string): string | null => {
   if (!selectedCustomer.value?.categoryId) return null;
-  return priceMap.value[productId]?.[selectedCustomer.value.categoryId] ?? null;
+  const entry = priceMap.value[productId];
+  if (!entry) return null;
+  return entry[selectedCustomer.value.categoryId] ?? null;
 };
 
 const cartProductIds = computed(() => cart.value.map((i) => i.product.id));
@@ -131,17 +128,13 @@ const addToCart = (product: Product) => {
   showProductPicker.value = false;
 };
 
-const removeFromCart = (index: number) => cart.value.splice(index, 1);
-
-const updateQty = (index: number, qty: number) => {
-  if (qty < 1) return;
-  cart.value[index].qty = qty;
+const removeFromCart = (i: number) => cart.value.splice(i, 1);
+const updateQty = (i: number, qty: number) => {
+  if (qty >= 1) cart.value[i].qty = qty;
 };
-
 const grandTotal = computed(() =>
   cart.value.reduce((s, i) => s + parseFloat(i.unitPrice) * i.qty, 0),
 );
-
 const canSave = computed(() => selectedCustomer.value && cart.value.length > 0);
 
 const handleSave = async () => {
@@ -154,14 +147,11 @@ const handleSave = async () => {
         customerId: selectedCustomer.value!.id,
         status: status.value,
         notes: notes.value.trim() || undefined,
-        items: cart.value.map((i) => ({
-          productId: i.product.id,
-          qty: i.qty,
-        })),
+        items: cart.value.map((i) => ({ productId: i.product.id, qty: i.qty })),
       },
     });
     router.push("/admin/transactions");
-  } catch (err: any) {
+  } catch (err) {
     console.error("Failed to create transaction:", err);
   } finally {
     isSaving.value = false;
@@ -273,7 +263,7 @@ const handleSave = async () => {
             Select a customer to continue
           </p>
           <p v-else-if="!selectedCustomer.categoryId" class="field-warn">
-            ⚠️ This customer has no pricing category — no prices can be applied.
+            ⚠️ This customer has no pricing category.
             <NuxtLink :to="`/admin/customers/${selectedCustomer.id}/edit`"
               >Assign a category →</NuxtLink
             >
@@ -372,7 +362,6 @@ const handleSave = async () => {
             <span v-else>Add Product</span>
           </button>
 
-          <!-- Product picker -->
           <div v-if="showProductPicker" class="product-picker">
             <div class="product-picker__head">
               <span>Select product</span>
@@ -407,7 +396,6 @@ const handleSave = async () => {
             </div>
           </div>
 
-          <!-- Grand total -->
           <div v-if="cart.length > 0" class="grand-total">
             <span>Grand Total</span>
             <span class="grand-total__val">{{ formatRupiah(grandTotal) }}</span>
@@ -447,13 +435,12 @@ const handleSave = async () => {
             <label class="field-label">Notes (optional)</label>
             <InputText
               v-model="notes"
-              placeholder="e.g. Urgent delivery, paid in advance"
+              placeholder="e.g. Urgent delivery"
               fluid
             />
           </div>
         </FormSection>
 
-        <!-- Actions -->
         <div class="form-actions">
           <button
             type="button"
@@ -571,8 +558,6 @@ const handleSave = async () => {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
-
-/* Customer grid */
 .customer-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -649,8 +634,6 @@ const handleSave = async () => {
 .spin {
   animation: spin 0.8s linear infinite;
 }
-
-/* Cart */
 .cart-list {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -743,8 +726,6 @@ const handleSave = async () => {
 .remove-btn:hover {
   background: #fee2e2;
 }
-
-/* Add item button */
 .add-item-btn {
   display: inline-flex;
   align-items: center;
@@ -771,8 +752,6 @@ const handleSave = async () => {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* Product picker */
 .product-picker {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -842,8 +821,6 @@ const handleSave = async () => {
   color: #94a3b8;
   font-size: 13px;
 }
-
-/* Grand total */
 .grand-total {
   display: flex;
   justify-content: space-between;
@@ -860,8 +837,6 @@ const handleSave = async () => {
   font-family: "Geist Mono", monospace;
   font-size: 18px;
 }
-
-/* Status tabs */
 .status-tabs {
   display: flex;
   gap: 8px;
@@ -899,8 +874,6 @@ const handleSave = async () => {
 .status-tab__dot--pending {
   background: #d97706;
 }
-
-/* Actions */
 .form-actions {
   display: flex;
   align-items: center;

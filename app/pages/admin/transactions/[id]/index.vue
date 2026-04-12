@@ -190,6 +190,26 @@ const doAddPayment = async () => {
           >
             Cancel
           </button>
+          <NuxtLink
+            :to="`/admin/transactions/${id}/invoice`"
+            class="btn-action btn-action--gray"
+            target="_blank"
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            Invoice
+          </NuxtLink>
           <NuxtLink to="/admin/transactions" class="btn-ghost">← Back</NuxtLink>
         </div>
       </template>
@@ -602,6 +622,15 @@ const doAddPayment = async () => {
 }
 .btn-action--red:hover {
   background: #fee2e2;
+}
+.btn-action--gray {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
+  text-decoration: none;
+}
+.btn-action--gray:hover {
+  background: #f1f5f9;
 }
 .btn-ghost {
   font-size: 13px;

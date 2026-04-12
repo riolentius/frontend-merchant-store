@@ -15,8 +15,8 @@ export default defineNuxtPlugin(() => {
 
     onResponseError({ response }) {
       if (response.status === 401) {
-        const { clearAuth } = useAuth()
-        clearAuth()
+        const tokenCookie = useCookie('admin_token')
+        tokenCookie.value = null
         navigateTo('/auth/login')
       }
     },

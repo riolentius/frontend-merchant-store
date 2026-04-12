@@ -11,13 +11,13 @@ const isLoaded      = ref(false)
 const isLoading     = ref(false)
  
 export const useCategories = () => {
-  const { $api } = useNuxtApp()
+  const { apiFetch } = useApiFetch()
  
   const fetchCategories = async () => {
     if (isLoaded.value || isLoading.value) return
     isLoading.value = true
     try {
-      const res = await $api<{ items: CustomerCategory[] }>('/customer-categories')
+      const res = await apiFetch<{ items: CustomerCategory[] }>('/customer-categories')
       categories.value = res.items ?? []
       isLoaded.value   = true
     } catch (err) {
