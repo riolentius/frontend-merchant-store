@@ -19,14 +19,12 @@ const view = ref<TransactionView | null>(null);
 const isLoading = ref(true);
 const notFound = ref(false);
 
-// Actions
 const isFulfilling = ref(false);
 const showFulfillConfirm = ref(false);
 const showCancelConfirm = ref(false);
-
-// Add payment
 const showAddPayment = ref(false);
 const isSavingPayment = ref(false);
+
 const paymentForm = reactive({
   method: "cash",
   amount: "",
@@ -51,7 +49,6 @@ const progress = computed(() =>
     : 0,
 );
 
-// Status transitions
 const canConfirm = computed(() => view.value?.status === "draft");
 const canFulfill = computed(() => view.value?.status === "pending");
 const canCancel = computed(() =>
@@ -63,6 +60,17 @@ const canPay = computed(
     view.value?.paymentStatus !== "overpaid" &&
     view.value?.status !== "cancelled",
 );
+
+const openFulfillConfirm = () => {
+  console.log("Opening fulfill confirmation dialog");
+  showFulfillConfirm.value = true;
+};
+const openCancelConfirm = () => {
+  showCancelConfirm.value = true;
+};
+const openAddPayment = () => {
+  showAddPayment.value = true;
+};
 
 const doConfirm = async () => {
   try {
@@ -118,7 +126,6 @@ const doAddPayment = async () => {
         note: paymentForm.note || undefined,
       },
     });
-    // Refresh view
     view.value = await $api<TransactionView>(`/transactions/${id}/view`);
     showAddPayment.value = false;
     paymentForm.amount = "";
@@ -136,60 +143,43 @@ const doAddPayment = async () => {
 <template>
   <div class="page">
     <PageHeader
-      :title="isLoading ? 'Loading…' : `Transaction`"
+      :title="isLoading ? 'Loading…' : 'Transaction'"
       :subtitle="view ? `#${view.id.slice(0, 8)}… · ${view.customerName}` : ''"
     >
       <template #action>
         <div class="header-actions">
-          <button
+          <Button
             v-if="canConfirm && view"
-            class="btn-action btn-action--blue"
+            label="Confirm Order"
+            severity="info"
+            size="small"
+            outlined
             @click="doConfirm"
-          >
-            Confirm Order
-          </button>
-          <button
+          />
+          <Button
             v-if="canFulfill && view"
-            class="btn-action btn-action--green"
-            @click="showFulfillConfirm = true"
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Fulfill
-          </button>
-          <button
+            label="Fulfill"
+            severity="success"
+            size="small"
+            outlined
+            @click="openFulfillConfirm"
+          />
+          <Button
             v-if="canPay && view"
-            class="btn-action btn-action--blue"
-            @click="showAddPayment = true"
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="1" y="4" width="22" height="16" rx="2" />
-              <line x1="1" y1="10" x2="23" y2="10" />
-            </svg>
-            Add Payment
-          </button>
-          <button
+            label="Add Payment"
+            severity="info"
+            size="small"
+            outlined
+            @click="openAddPayment"
+          />
+          <Button
             v-if="canCancel && view"
-            class="btn-action btn-action--red"
-            @click="showCancelConfirm = true"
-          >
-            Cancel
-          </button>
+            label="Cancel"
+            severity="danger"
+            size="small"
+            outlined
+            @click="openCancelConfirm"
+          />
           <NuxtLink
             :to="`/admin/transactions/${id}/invoice`"
             class="btn-action btn-action--gray"
@@ -225,7 +215,6 @@ const doAddPayment = async () => {
     <template v-else-if="view">
       <div class="detail-grid">
         <div class="left-col">
-          <!-- Status bar -->
           <div class="status-bar">
             <div class="status-item">
               <span class="status-item__label">Order Status</span>
@@ -253,7 +242,6 @@ const doAddPayment = async () => {
             </div>
           </div>
 
-          <!-- Items -->
           <FormSection title="Order Items">
             <table class="items-table">
               <thead>
@@ -287,7 +275,6 @@ const doAddPayment = async () => {
             </table>
           </FormSection>
 
-          <!-- Payments -->
           <FormSection title="Payment History">
             <div v-if="view.payments.length === 0" class="empty-payments">
               <svg
@@ -325,7 +312,6 @@ const doAddPayment = async () => {
                   formatRupiah(pay.amount)
                 }}</span>
               </div>
-              <!-- Summary -->
               <div class="payment-summary">
                 <div class="payment-summary__row">
                   <span>Total Paid</span>
@@ -345,7 +331,6 @@ const doAddPayment = async () => {
               </div>
             </div>
 
-            <!-- Add payment form -->
             <div v-if="showAddPayment" class="add-payment">
               <div class="add-payment__head">
                 <span>Record Payment</span>
@@ -412,7 +397,6 @@ const doAddPayment = async () => {
                     />
                   </div>
                 </div>
-                <!-- Quick fill -->
                 <div class="quick-fills">
                   <button
                     type="button"
@@ -455,10 +439,8 @@ const doAddPayment = async () => {
           </FormSection>
         </div>
 
-        <!-- Summary sidebar -->
         <div class="summary-card">
           <p class="summary-title">Summary</p>
-
           <div class="summary-amounts">
             <div class="amount-row">
               <span>Total</span
@@ -482,8 +464,6 @@ const doAddPayment = async () => {
               }}</span>
             </div>
           </div>
-
-          <!-- Progress bar -->
           <div class="progress-wrap">
             <div class="progress-bar">
               <div
@@ -498,7 +478,6 @@ const doAddPayment = async () => {
             </div>
             <span class="progress-label">{{ progress }}% paid</span>
           </div>
-
           <div class="summary-badges">
             <div class="badge-row">
               <span class="badge-label">Order</span>
@@ -515,62 +494,82 @@ const doAddPayment = async () => {
               >
             </div>
           </div>
-
-          <button
+          <Button
             v-if="canFulfill"
-            class="btn-fulfill-lg"
-            @click="showFulfillConfirm = true"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Mark as Fulfilled
-          </button>
-
-          <button
+            label="Mark as Fulfilled"
+            severity="success"
+            outlined
+            fluid
+            @click="openFulfillConfirm"
+          />
+          <Button
             v-if="canPay"
-            class="btn-pay-lg"
-            @click="showAddPayment = true"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="1" y="4" width="22" height="16" rx="2" />
-              <line x1="1" y1="10" x2="23" y2="10" />
-            </svg>
-            Record Payment
-          </button>
+            label="Record Payment"
+            severity="info"
+            outlined
+            fluid
+            @click="openAddPayment"
+          />
         </div>
       </div>
-    </template>
+      <Dialog
+        v-model:visible="showFulfillConfirm"
+        header="Fulfill Transaction?"
+        :modal="true"
+        :draggable="false"
+        :style="{ width: '380px' }"
+      >
+        <p style="margin: 0; font-size: 13.5px; color: #64748b">
+          Stock will be deducted. This cannot be undone.
+        </p>
+        <template #footer>
+          <div style="display: flex; gap: 8px">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              outlined
+              fluid
+              @click="showFulfillConfirm = false"
+            />
+            <Button
+              label="Yes, Fulfill"
+              severity="success"
+              fluid
+              @click="doFulfill"
+            />
+          </div>
+        </template>
+      </Dialog>
 
-    <ConfirmDialog
-      v-model="showFulfillConfirm"
-      title="Fulfill Transaction?"
-      description="Stock will be deducted. This cannot be undone."
-      confirm-label="Yes, Fulfill"
-      :danger="false"
-      @confirm="doFulfill"
-    />
-    <ConfirmDialog
-      v-model="showCancelConfirm"
-      title="Cancel Transaction?"
-      description="This will cancel the order and release any reserved stock."
-      confirm-label="Yes, Cancel"
-      @confirm="doCancel"
-    />
+      <Dialog
+        v-model:visible="showCancelConfirm"
+        header="Cancel Transaction?"
+        :modal="true"
+        :draggable="false"
+        :style="{ width: '380px' }"
+      >
+        <p style="margin: 0; font-size: 13.5px; color: #64748b">
+          This will cancel the order and release any reserved stock.
+        </p>
+        <template #footer>
+          <div style="display: flex; gap: 8px">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              outlined
+              fluid
+              @click="showCancelConfirm = false"
+            />
+            <Button
+              label="Yes, Cancel"
+              severity="danger"
+              fluid
+              @click="doCancel"
+            />
+          </div>
+        </template>
+      </Dialog>
+    </template>
   </div>
 </template>
 
@@ -598,30 +597,6 @@ const doAddPayment = async () => {
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s;
-}
-.btn-action--green {
-  background: #f0fdf4;
-  color: #16a34a;
-  border-color: #86efac;
-}
-.btn-action--green:hover {
-  background: #dcfce7;
-}
-.btn-action--blue {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #bfdbfe;
-}
-.btn-action--blue:hover {
-  background: #dbeafe;
-}
-.btn-action--red {
-  background: #fef2f2;
-  color: #dc2626;
-  border-color: #fecaca;
-}
-.btn-action--red:hover {
-  background: #fee2e2;
 }
 .btn-action--gray {
   background: #f8fafc;
@@ -678,8 +653,6 @@ const doAddPayment = async () => {
   flex-direction: column;
   gap: 16px;
 }
-
-/* Status bar */
 .status-bar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -719,8 +692,6 @@ const doAddPayment = async () => {
   text-transform: capitalize;
   align-self: flex-start;
 }
-
-/* Items table */
 .items-table {
   width: 100%;
   border-collapse: collapse;
@@ -776,8 +747,6 @@ const doAddPayment = async () => {
   font-weight: 600;
   color: #0f172a;
 }
-
-/* Payments */
 .empty-payments {
   display: flex;
   align-items: center;
@@ -842,8 +811,6 @@ const doAddPayment = async () => {
 .payment-summary__val {
   font-family: "Geist Mono", monospace;
 }
-
-/* Add payment */
 .add-payment {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -975,8 +942,6 @@ const doAddPayment = async () => {
   opacity: 0.6;
   cursor: not-allowed;
 }
-
-/* Summary card */
 .summary-card {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -1054,38 +1019,6 @@ const doAddPayment = async () => {
   font-size: 12.5px;
   color: #64748b;
 }
-.btn-fulfill-lg,
-.btn-pay-lg {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 10px;
-  width: 100%;
-  border-radius: 8px;
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  border: 1px solid;
-  transition: background 0.15s;
-}
-.btn-fulfill-lg {
-  background: #f0fdf4;
-  color: #16a34a;
-  border-color: #86efac;
-}
-.btn-fulfill-lg:hover {
-  background: #dcfce7;
-}
-.btn-pay-lg {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #bfdbfe;
-}
-.btn-pay-lg:hover {
-  background: #dbeafe;
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1093,7 +1026,6 @@ const doAddPayment = async () => {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
 }
-
 @media (max-width: 1000px) {
   .detail-grid {
     grid-template-columns: 1fr;

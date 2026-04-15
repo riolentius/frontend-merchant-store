@@ -483,14 +483,34 @@ const saveNewAddr = async () => {
         </div>
       </div>
     </form>
-
-    <ConfirmDialog
-      v-model="showConfirmLeave"
-      title="Discard changes?"
-      description="You have unsaved changes. Are you sure you want to leave?"
-      confirm-label="Yes, Discard"
-      @confirm="router.push(`/admin/customers/${id}`)"
-    />
+    <Dialog
+      v-model:visible="showConfirmLeave"
+      header="Discard changes?"
+      :modal="true"
+      :draggable="false"
+      :style="{ width: '380px' }"
+    >
+      <p style="margin: 0; font-size: 13.5px; color: #64748b; line-height: 1.5">
+        You have unsaved changes. Are you sure you want to leave?
+      </p>
+      <template #footer>
+        <div style="display: flex; gap: 8px">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            outlined
+            fluid
+            @click="showConfirmLeave = false"
+          />
+          <Button
+            label="Yes, Discard"
+            severity="danger"
+            fluid
+            @click="router.push(`/admin/customers/${id}`)"
+          />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 

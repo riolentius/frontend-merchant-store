@@ -283,20 +283,63 @@ const doDelete = () => router.push("/admin/customers");
       </div>
     </template>
 
-    <ConfirmDialog
-      v-model="showDeleteConfirm"
-      title="Delete Customer"
-      description="This will permanently delete this customer."
-      confirm-label="Yes, Delete"
-      @confirm="doDelete"
-    />
-    <ConfirmDialog
-      v-model="showDeleteAddrConfirm"
-      title="Delete Address"
-      description="Remove this address from the customer?"
-      confirm-label="Yes, Delete"
-      @confirm="doDeleteAddr"
-    />
+    <Dialog
+      v-model:visible="showDeleteConfirm"
+      header="Delete Customer"
+      :modal="true"
+      :draggable="false"
+      :style="{ width: '380px' }"
+    >
+      <p style="margin: 0; font-size: 13.5px; color: #64748b; line-height: 1.5">
+        This will permanently delete this customer.
+      </p>
+      <template #footer>
+        <div style="display: flex; gap: 8px">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            outlined
+            fluid
+            @click="showDeleteConfirm = false"
+          />
+          <Button
+            label="Yes, Delete"
+            severity="danger"
+            fluid
+            @click="doDelete"
+          />
+        </div>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="showDeleteAddrConfirm"
+      header="Delete Address"
+      :modal="true"
+      :draggable="false"
+      :style="{ width: '380px' }"
+    >
+      <p style="margin: 0; font-size: 13.5px; color: #64748b; line-height: 1.5">
+        Remove this address from the customer?
+      </p>
+      <template #footer>
+        <div style="display: flex; gap: 8px">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            outlined
+            fluid
+            @click="showDeleteAddrConfirm = false"
+          />
+          <Button
+            label="Yes, Delete"
+            severity="danger"
+            fluid
+            @click="doDeleteAddr"
+          />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 

@@ -257,13 +257,34 @@ const doDelete = () => router.push("/admin/products");
       </div>
     </template>
 
-    <ConfirmDialog
-      v-model="showDeleteConfirm"
-      title="Delete Product"
-      description="This will permanently delete this product and all its prices."
-      confirm-label="Yes, Delete"
-      @confirm="doDelete"
-    />
+    <Dialog
+      v-model:visible="showDeleteConfirm"
+      header="Delete Product"
+      :modal="true"
+      :draggable="false"
+      :style="{ width: '380px' }"
+    >
+      <p style="margin: 0; font-size: 13.5px; color: #64748b; line-height: 1.5">
+        This will permanently delete this product and all its prices.
+      </p>
+      <template #footer>
+        <div style="display: flex; gap: 8px">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            outlined
+            fluid
+            @click="showDeleteConfirm = false"
+          />
+          <Button
+            label="Yes, Delete"
+            severity="danger"
+            fluid
+            @click="doDelete"
+          />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 

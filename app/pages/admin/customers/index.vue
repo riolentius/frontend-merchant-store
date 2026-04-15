@@ -143,13 +143,35 @@ const formatDate = (d: string) =>
       </div>
     </DataCard>
 
-    <ConfirmDialog
-      v-model="showConfirm"
-      title="Delete Customer"
-      description="This action cannot be undone. Are you sure you want to delete this customer?"
-      confirm-label="Yes, Delete"
-      @confirm="doDelete"
-    />
+    <Dialog
+      v-model:visible="showConfirm"
+      header="Delete Customer"
+      :modal="true"
+      :draggable="false"
+      :style="{ width: '380px' }"
+    >
+      <p style="margin: 0; font-size: 13.5px; color: #64748b; line-height: 1.5">
+        This action cannot be undone. Are you sure you want to delete this
+        customer?
+      </p>
+      <template #footer>
+        <div style="display: flex; gap: 8px">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            outlined
+            fluid
+            @click="showConfirm = false"
+          />
+          <Button
+            label="Yes, Delete"
+            severity="danger"
+            fluid
+            @click="doDelete"
+          />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 
