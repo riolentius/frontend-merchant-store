@@ -15,7 +15,6 @@ const isLoading = ref(true);
 const notFound = ref(false);
 const format = ref<"a4" | "thermal">("a4");
 
-// Merchant config — to be replaced by settings API later
 const merchant = {
   name: "CAHAYA GADING",
   phone: "085103992545",
@@ -27,8 +26,6 @@ const merchant = {
 onMounted(async () => {
   try {
     view.value = await $api<TransactionView>(`/transactions/${id}/view`);
-
-    // Fetch customer default address
     if (view.value.customerId) {
       try {
         const addrRes = await $api<{ items: any[] }>(
@@ -47,9 +44,7 @@ onMounted(async () => {
             .filter(Boolean)
             .join(", ");
         }
-      } catch {
-        /* address optional */
-      }
+      } catch {}
     }
   } catch {
     notFound.value = true;
@@ -58,7 +53,6 @@ onMounted(async () => {
   }
 });
 
-// INV/DDMMYY + sequence from UUID last 4
 const invoiceNo = computed(() => {
   if (!view.value) return "";
   const d = new Date(view.value.createdAt);
@@ -76,7 +70,6 @@ const formatTanggal = (d: string) =>
     year: "numeric",
   });
 
-// Indonesian number format: 13.325.000,00
 const fmtIDR = (amount: string | number) => {
   const n = typeof amount === "string" ? parseFloat(amount) : amount;
   return new Intl.NumberFormat("id-ID", {
@@ -88,7 +81,6 @@ const fmtIDR = (amount: string | number) => {
 const grandTotal = computed(() => parseFloat(view.value?.totalAmount ?? "0"));
 const totalPaid = computed(() => parseFloat(view.value?.paidAmount ?? "0"));
 const saldo = computed(() => grandTotal.value - totalPaid.value);
-const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
 const handlePrint = () => {
   const original = document.title;
@@ -97,16 +89,16 @@ const handlePrint = () => {
   document.title = original;
 };
 
-// Thermal format
 const fmtThermal = (amount: string | number) => {
   const n = typeof amount === "string" ? parseFloat(amount) : amount;
   return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n);
 };
+
+const isPaid = computed(() => view.value?.paymentStatus === "paid");
 </script>
 
 <template>
   <div class="invoice-shell">
-    <!-- ── Controls (hidden on print) ── -->
     <div class="controls no-print">
       <button
         class="ctrl-back"
@@ -124,7 +116,6 @@ const fmtThermal = (amount: string | number) => {
         </svg>
         Back
       </button>
-
       <div class="format-tabs">
         <button
           class="format-tab"
@@ -161,7 +152,6 @@ const fmtThermal = (amount: string | number) => {
           80mm Struk
         </button>
       </div>
-
       <div class="ctrl-actions">
         <button class="ctrl-btn ctrl-btn--outline" @click="handlePrint">
           <svg
@@ -191,15 +181,17 @@ const fmtThermal = (amount: string | number) => {
       </button>
     </div>
 
-    <!-- ════════════════════════════════════════ -->
-    <!-- A4 FAKTUR                               -->
-    <!-- ════════════════════════════════════════ -->
+    <!-- A4 FAKTUR -->
     <div v-else-if="view && format === 'a4'" class="a4-paper print-target">
-      <!-- Header -->
       <div class="a4-header">
         <div class="a4-header__left">
           <p class="a4-merchant-name">{{ merchant.name }}</p>
           <p class="a4-merchant-phone">{{ merchant.phone }}</p>
+          <div class="a4-transfer-stamp">
+            <p v-for="line in merchant.transferInfo.split('\n')" :key="line">
+              {{ line }}
+            </p>
+          </div>
         </div>
         <div class="a4-header__right">
           <table class="a4-meta">
@@ -221,22 +213,12 @@ const fmtThermal = (amount: string | number) => {
             <tr v-if="address">
               <td class="a4-meta__key">Alamat</td>
               <td class="a4-meta__sep">:</td>
-              <td class="a4-meta__val">{{ address }}</td>
+              <td class="a4-meta__val a4-meta__val--addr">{{ address }}</td>
             </tr>
           </table>
         </div>
       </div>
 
-      <!-- Transfer stamp -->
-      <div class="a4-stamp-row">
-        <div class="a4-transfer-stamp">
-          <p v-for="line in merchant.transferInfo.split('\n')" :key="line">
-            {{ line }}
-          </p>
-        </div>
-      </div>
-
-      <!-- Items table -->
       <table class="a4-table">
         <thead>
           <tr>
@@ -257,20 +239,17 @@ const fmtThermal = (amount: string | number) => {
             <td class="a4-td a4-td--right">0,00</td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.lineTotal) }}</td>
           </tr>
-          <!-- Padding rows -->
           <tr
-            v-for="i in Math.max(0, 7 - view.items.length)"
+            v-for="i in Math.max(0, 5 - view.items.length)"
             :key="`pad-${i}`"
-            class="a4-tr a4-tr--pad"
+            class="a4-tr--pad"
           >
             <td class="a4-td" colspan="6">&nbsp;</td>
           </tr>
         </tbody>
       </table>
 
-      <!-- Footer section: signatures + totals -->
       <div class="a4-footer">
-        <!-- Left: signatures -->
         <div class="a4-sigs">
           <div class="a4-sig">
             <p class="a4-sig__label">Pembeli</p>
@@ -279,18 +258,11 @@ const fmtThermal = (amount: string | number) => {
           </div>
           <div class="a4-sig">
             <p class="a4-sig__label">Penjual</p>
-            <!-- Watermark stamp -->
-            <div class="a4-sig__space a4-sig__space--stamp">
-              <div class="a4-watermark">
-                <p class="a4-watermark__top">✦ {{ merchant.name }} ✦</p>
-                <p class="a4-watermark__bot">RESMI</p>
-              </div>
-            </div>
+            <div class="a4-sig__space a4-sig__space--stamp"></div>
             <div class="a4-sig__line" />
           </div>
         </div>
 
-        <!-- Right: totals -->
         <div class="a4-totals">
           <div class="a4-total-row">
             <span class="a4-total-label">Harga</span>
@@ -313,19 +285,13 @@ const fmtThermal = (amount: string | number) => {
             <span class="a4-total-sep">:</span>
             <span class="a4-total-val">{{ fmtIDR(grandTotal) }}</span>
           </div>
-          <div v-if="isPaid" class="a4-lunas-stamp">LUNAS</div>
         </div>
       </div>
 
-      <!-- Bottom note -->
-      <div class="a4-bottom-note">
-        {{ merchant.footerNote }}
-      </div>
+      <div class="a4-bottom-note">{{ merchant.footerNote }}</div>
     </div>
 
-    <!-- ════════════════════════════════════════ -->
-    <!-- 80mm STRUK                              -->
-    <!-- ════════════════════════════════════════ -->
+    <!-- 80mm STRUK -->
     <div
       v-else-if="view && format === 'thermal'"
       class="thermal-paper print-target"
@@ -333,7 +299,6 @@ const fmtThermal = (amount: string | number) => {
       <p class="thm-merchant">{{ merchant.name }}</p>
       <p class="thm-phone">{{ merchant.phone }}</p>
       <p class="thm-div">================================</p>
-
       <div class="thm-row">
         <span>No.</span><span>{{ invoiceNo }}</span>
       </div>
@@ -344,9 +309,7 @@ const fmtThermal = (amount: string | number) => {
         <span>Pelanggan</span><span>{{ view.customerName }}</span>
       </div>
       <div v-if="address" class="thm-address">{{ address }}</div>
-
       <p class="thm-div">--------------------------------</p>
-
       <div class="thm-col-head">
         <span>Produk</span
         ><span class="thm-col-head__right"
@@ -354,7 +317,6 @@ const fmtThermal = (amount: string | number) => {
         >
       </div>
       <p class="thm-div-thin">- - - - - - - - - - - - - - - -</p>
-
       <div v-for="item in view.items" :key="item.productId" class="thm-item">
         <p class="thm-item__name">{{ item.productName }}</p>
         <div class="thm-item__row">
@@ -363,36 +325,25 @@ const fmtThermal = (amount: string | number) => {
           <span class="thm-item__total">{{ fmtThermal(item.lineTotal) }}</span>
         </div>
       </div>
-
       <p class="thm-div">================================</p>
-
       <div class="thm-row thm-row--total">
-        <span>TOTAL</span>
-        <span>Rp {{ fmtThermal(view.totalAmount) }}</span>
+        <span>TOTAL</span><span>Rp {{ fmtThermal(view.totalAmount) }}</span>
       </div>
       <div class="thm-row">
-        <span>Dibayar</span>
-        <span>Rp {{ fmtThermal(view.paidAmount) }}</span>
+        <span>Dibayar</span><span>Rp {{ fmtThermal(view.paidAmount) }}</span>
       </div>
       <div v-if="saldo > 0" class="thm-row thm-row--saldo">
-        <span>Saldo</span>
-        <span>Rp {{ fmtThermal(saldo) }}</span>
+        <span>Saldo</span><span>Rp {{ fmtThermal(saldo) }}</span>
       </div>
       <div class="thm-row"><span>Discount</span><span>Rp 0</span></div>
-
       <p class="thm-div">- - - - - - - - - - - - - - - -</p>
-
-      <!-- Transfer info -->
       <div class="thm-transfer">
         <p v-for="line in merchant.transferInfo.split('\n')" :key="line">
           {{ line }}
         </p>
       </div>
-
       <p class="thm-div">================================</p>
-
       <div v-if="isPaid" class="thm-lunas">*** LUNAS ***</div>
-
       <div class="thm-sig-row">
         <div class="thm-sig">
           <div class="thm-sig__space" />
@@ -403,7 +354,6 @@ const fmtThermal = (amount: string | number) => {
           <p>Penjual</p>
         </div>
       </div>
-
       <p class="thm-footer-note">{{ merchant.footerNote }}</p>
     </div>
   </div>
@@ -425,22 +375,21 @@ const fmtThermal = (amount: string | number) => {
     padding: 0;
     gap: 0;
   }
-
   .a4-paper {
     box-shadow: none !important;
     width: 210mm !important;
-    min-height: 297mm !important;
-    padding: 10mm 12mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    padding: 8mm 10mm !important;
     margin: 0 !important;
+    overflow: hidden !important;
   }
-
   .thermal-paper {
     box-shadow: none !important;
     width: 72mm !important;
     padding: 2mm !important;
     margin: 0 !important;
   }
-
   @page {
     margin: 0;
     size: A4;
@@ -449,7 +398,6 @@ const fmtThermal = (amount: string | number) => {
 </style>
 
 <style scoped>
-/* ── Shell ── */
 .invoice-shell {
   min-height: 100vh;
   background: #e2e8f0;
@@ -459,8 +407,6 @@ const fmtThermal = (amount: string | number) => {
   padding-bottom: 48px;
   gap: 20px;
 }
-
-/* ── Controls ── */
 .controls {
   width: 100%;
   display: flex;
@@ -494,7 +440,6 @@ const fmtThermal = (amount: string | number) => {
   color: #fff;
   background: rgba(255, 255, 255, 0.08);
 }
-
 .format-tabs {
   display: flex;
   gap: 4px;
@@ -523,7 +468,6 @@ const fmtThermal = (amount: string | number) => {
   background: #fff;
   color: #0f172a;
 }
-
 .ctrl-actions {
   display: flex;
   gap: 8px;
@@ -548,7 +492,6 @@ const fmtThermal = (amount: string | number) => {
 .ctrl-btn--outline:hover {
   background: rgba(255, 255, 255, 0.18);
 }
-
 .loading,
 .not-found {
   padding: 48px;
@@ -556,49 +499,64 @@ const fmtThermal = (amount: string | number) => {
   font-size: 14px;
 }
 
-/* ═══════════════════════════════════ */
-/* A4 PAPER                           */
-/* ═══════════════════════════════════ */
+/* A4 */
 .a4-paper {
   width: 210mm;
-  min-height: 297mm;
+  height: 297mm;
   background: #fff;
-  padding: 12mm 14mm 10mm;
+  padding: 8mm 10mm;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
   font-family: Arial, "Helvetica Neue", sans-serif;
-  font-size: 9pt;
+  font-size: 8.5pt;
   color: #111;
   position: relative;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
-/* Header */
 .a4-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 6mm;
+  margin-bottom: 3mm;
+  gap: 8mm;
+}
+.a4-header__left {
+  flex-shrink: 0;
 }
 .a4-merchant-name {
-  font-size: 14pt;
+  font-size: 13pt;
   font-weight: 900;
   color: #000;
-  margin: 0 0 1mm;
+  margin: 0 0 0.5mm;
   letter-spacing: 0.03em;
 }
 .a4-merchant-phone {
-  font-size: 9pt;
+  font-size: 8.5pt;
   color: #333;
+  margin: 0 0 2mm;
+}
+
+.a4-transfer-stamp {
+  border: 2px solid #cc0000;
+  padding: 1.5mm 3mm;
+  display: inline-block;
+  color: #cc0000;
+  font-size: 8pt;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.a4-transfer-stamp p {
   margin: 0;
 }
 
 .a4-header__right {
-  text-align: left;
+  flex: 1;
 }
 .a4-meta {
   border-collapse: collapse;
-  font-size: 9pt;
+  font-size: 8.5pt;
+  width: 100%;
 }
 .a4-meta__key {
   color: #333;
@@ -607,78 +565,69 @@ const fmtThermal = (amount: string | number) => {
   vertical-align: top;
 }
 .a4-meta__sep {
-  padding: 0 2mm;
+  padding: 0 1.5mm;
   color: #333;
   vertical-align: top;
 }
 .a4-meta__val {
   color: #000;
   font-weight: 500;
-  max-width: 60mm;
-  line-height: 1.4;
+  line-height: 1.3;
+}
+.a4-meta__val--addr {
+  max-width: 70mm;
+  word-break: break-word;
+  font-size: 8pt;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-/* Transfer stamp */
-.a4-stamp-row {
-  display: flex;
-  margin-bottom: 5mm;
-}
-.a4-transfer-stamp {
-  border: 2px solid #cc0000;
-  padding: 2mm 4mm;
-  display: inline-block;
-  color: #cc0000;
-  font-size: 8.5pt;
-  font-weight: 700;
-  line-height: 1.5;
-}
-.a4-transfer-stamp p {
-  margin: 0;
-}
-
-/* Table */
 .a4-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 0;
-  flex: 1;
+  table-layout: fixed;
 }
 .a4-th {
   background: #fff;
   color: #111;
   border-top: 1px solid #999;
   border-bottom: 1px solid #999;
-  padding: 1.5mm 2mm;
-  font-size: 8.5pt;
+  padding: 1mm 1.5mm;
+  font-size: 8pt;
   font-weight: 700;
   text-align: center;
   white-space: nowrap;
 }
 .a4-th--desc {
   text-align: left;
-  width: auto;
 }
 .a4-th--num {
-  width: 20mm;
-}
-.a4-th--sat {
   width: 18mm;
 }
-.a4-th--price {
-  width: 30mm;
+.a4-th--sat {
+  width: 16mm;
 }
-.a4-th--disc {
+.a4-th--price {
   width: 28mm;
 }
-.a4-th--total {
-  width: 32mm;
+.a4-th--disc {
+  width: 26mm;
 }
-
+.a4-th--total {
+  width: 30mm;
+}
 .a4-td {
-  padding: 1.5mm 2mm;
-  font-size: 9pt;
+  padding: 1.5mm 1.5mm;
+  font-size: 8.5pt;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
+  height: 7mm;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .a4-td--center {
   text-align: center;
@@ -689,33 +638,32 @@ const fmtThermal = (amount: string | number) => {
 }
 .a4-tr--pad .a4-td {
   border-bottom: 0.5px solid #eee;
+  height: 7mm;
 }
 
-/* Footer: sig + totals */
 .a4-footer {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-top: 4mm;
+  margin-top: 2mm;
   border-top: 1px solid #999;
-  padding-top: 3mm;
+  padding-top: 2mm;
 }
-
 .a4-sigs {
   display: flex;
-  gap: 12mm;
+  gap: 10mm;
 }
 .a4-sig {
-  width: 45mm;
+  width: 40mm;
 }
 .a4-sig__label {
-  font-size: 9pt;
+  font-size: 8.5pt;
   font-weight: 700;
   margin: 0 0 1mm;
   text-align: center;
 }
 .a4-sig__space {
-  height: 16mm;
+  height: 14mm;
   position: relative;
 }
 .a4-sig__space--stamp {
@@ -725,15 +673,12 @@ const fmtThermal = (amount: string | number) => {
 }
 .a4-sig__line {
   border-top: 1px solid #333;
-  margin-top: 0;
 }
-
-/* Watermark stamp */
 .a4-watermark {
   border: 2px solid rgba(37, 99, 235, 0.35);
   border-radius: 50%;
-  width: 28mm;
-  height: 28mm;
+  width: 24mm;
+  height: 24mm;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -743,35 +688,34 @@ const fmtThermal = (amount: string | number) => {
   color: rgba(37, 99, 235, 0.4);
 }
 .a4-watermark__top {
-  font-size: 6pt;
+  font-size: 5.5pt;
   font-weight: 700;
   margin: 0;
   letter-spacing: 0.05em;
   text-align: center;
 }
 .a4-watermark__bot {
-  font-size: 10pt;
+  font-size: 9pt;
   font-weight: 900;
   margin: 0;
   letter-spacing: 0.15em;
 }
 
-/* Totals */
 .a4-totals {
-  min-width: 60mm;
+  min-width: 58mm;
 }
 .a4-total-row {
   display: flex;
   align-items: baseline;
-  padding: 0.8mm 0;
-  font-size: 9pt;
+  padding: 0.6mm 0;
+  font-size: 8.5pt;
 }
 .a4-total-label {
-  width: 22mm;
+  width: 20mm;
   color: #333;
 }
 .a4-total-sep {
-  padding: 0 2mm;
+  padding: 0 1.5mm;
   color: #333;
 }
 .a4-total-val {
@@ -784,42 +728,24 @@ const fmtThermal = (amount: string | number) => {
 .a4-total-row--grand .a4-total-label,
 .a4-total-row--grand .a4-total-val {
   font-weight: 700;
-  font-size: 10pt;
+  font-size: 9.5pt;
 }
 .a4-divider {
   border-top: 1px solid #999;
-  margin: 1.5mm 0;
+  margin: 1mm 0;
 }
 
-.a4-lunas-stamp {
-  text-align: center;
-  font-size: 16pt;
-  font-weight: 900;
-  color: #16a34a;
-  border: 3px solid #16a34a;
-  border-radius: 3mm;
-  padding: 1.5mm 5mm;
-  margin-top: 3mm;
-  letter-spacing: 0.15em;
-  display: inline-block;
-  transform: rotate(-8deg);
-}
-
-/* Bottom note */
 .a4-bottom-note {
-  margin-top: auto;
-  padding-top: 4mm;
+  margin-top: 2mm;
+  padding-top: 2mm;
   border-top: 1px solid #999;
-  font-size: 7.5pt;
+  font-size: 7pt;
   color: #555;
   text-align: center;
   font-style: italic;
-  letter-spacing: 0.02em;
 }
 
-/* ═══════════════════════════════════ */
-/* 80mm THERMAL STRUK                 */
-/* ═══════════════════════════════════ */
+/* THERMAL */
 .thermal-paper {
   width: 72mm;
   background: #fff;
@@ -830,7 +756,6 @@ const fmtThermal = (amount: string | number) => {
   color: #000;
   line-height: 1.45;
 }
-
 .thm-merchant {
   font-size: 11pt;
   font-weight: 900;
@@ -856,7 +781,6 @@ const fmtThermal = (amount: string | number) => {
   margin: 1mm 0;
   text-align: center;
 }
-
 .thm-row {
   display: flex;
   justify-content: space-between;
@@ -874,14 +798,12 @@ const fmtThermal = (amount: string | number) => {
 .thm-row--saldo {
   color: #c00;
 }
-
 .thm-address {
   font-size: 7.5pt;
   color: #555;
   margin: 0.5mm 0 0 0;
   padding-left: 1mm;
 }
-
 .thm-col-head {
   display: flex;
   justify-content: space-between;
@@ -892,7 +814,6 @@ const fmtThermal = (amount: string | number) => {
 .thm-col-head__right {
   text-align: right;
 }
-
 .thm-item {
   margin: 1mm 0;
 }
@@ -914,7 +835,6 @@ const fmtThermal = (amount: string | number) => {
 .thm-item__total {
   font-weight: 500;
 }
-
 .thm-transfer {
   font-size: 7.5pt;
   color: #555;
@@ -924,7 +844,6 @@ const fmtThermal = (amount: string | number) => {
 .thm-transfer p {
   margin: 0.3mm 0;
 }
-
 .thm-lunas {
   text-align: center;
   font-size: 12pt;
@@ -932,7 +851,6 @@ const fmtThermal = (amount: string | number) => {
   letter-spacing: 0.15em;
   margin: 2mm 0;
 }
-
 .thm-sig-row {
   display: flex;
   justify-content: space-between;
@@ -951,7 +869,6 @@ const fmtThermal = (amount: string | number) => {
 .thm-sig p {
   margin: 1mm 0 0;
 }
-
 .thm-footer-note {
   font-size: 6.5pt;
   color: #777;

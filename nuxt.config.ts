@@ -12,7 +12,8 @@ export default defineNuxtConfig({
 
   // Disable SSR for all admin + auth pages
   // These pages need browser APIs (cookies, $api plugin)
-  routeRules: {
+ routeRules: {
+    '/': { redirect: '/admin' },
     '/admin/**': { ssr: false },
     '/auth/**':  { ssr: false },
   },
