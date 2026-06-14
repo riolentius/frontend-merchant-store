@@ -1,8 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: false });
-onMounted(() => {
-  navigateTo("/admin");
-});
+const token = useCookie("admin_token");
+await navigateTo(token.value ? "/admin" : "/auth/login");
 </script>
 
 <template>
