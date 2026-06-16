@@ -341,3 +341,120 @@
   .stat-grid  { grid-template-columns: 1fr 1fr; }
   .dash-date  { display: none; }
 }
+
+
+.top-products-panel {
+  margin-top: 16px;
+}
+ 
+/* Segmented 5 / 10 / 20 control */
+.top-seg {
+  display: inline-flex;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+.top-seg-btn {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.top-seg-btn:hover {
+  color: #0f172a;
+}
+.top-seg-btn--active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+ 
+/* Rows */
+.top-list {
+  display: flex;
+  flex-direction: column;
+}
+.top-row {
+  display: grid;
+  grid-template-columns: 28px minmax(150px, 1.3fr) minmax(0, 1.6fr) 64px;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.top-row:last-child {
+  border-bottom: none;
+}
+ 
+.top-rank {
+  font-family: "Geist Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-align: center;
+}
+ 
+.top-info {
+  min-width: 0;
+}
+.top-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #0f172a;
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.top-sku {
+  font-family: "Geist Mono", monospace;
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 0;
+}
+ 
+/* Inline volume bar */
+.top-bar-wrap {
+  height: 7px;
+  background: #f1f5f9;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.top-bar {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  transition: width 0.4s ease;
+}
+ 
+.top-qty {
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  text-align: right;
+  white-space: nowrap;
+}
+.top-qty-unit {
+  font-family: "Geist", sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+ 
+@media (max-width: 640px) {
+  .top-row {
+    grid-template-columns: 24px 1fr auto;
+  }
+  .top-bar-wrap {
+    display: none; /* hide bar on narrow screens, keep name + qty */
+  }
+}

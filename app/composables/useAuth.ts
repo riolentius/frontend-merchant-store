@@ -14,6 +14,8 @@ export interface AuthResponse {
   user?:       AuthUser
 }
 
+const FINANCE_ROLES = ['superadmin']
+
 export const useAuth = () => {
   const token = useCookie<string | null>('admin_token', {
     default:  () => null,
@@ -30,6 +32,11 @@ export const useAuth = () => {
   })
 
   const isAuthenticated = computed(() => !!token.value)
+
+  const role = computed(() => user.value?.role ?? null)
+  const canViewFinancials = computed(
+    () => !!role.value && FINANCE_ROLES.includes(role.value),
+  )
 
   const setAuth = (authData: AuthResponse) => {
     token.value = authData.accessToken
@@ -55,6 +62,25 @@ export const useAuth = () => {
     return response
   }
 
+  // Authoritative role from the signed JWT claims (GET /api/admin/me).
+  const fetchMe = async (): Promise<AuthUser | null> => {
+    const { apiFetch } = useApiFetch()
+    try {
+      const res = await apiFetch<{
+        ok: boolean
+        claims: { sub: string; email: string; role: string }
+      }>('/me')
+      user.value = {
+        id:    res.claims.sub,
+        email: res.claims.email,
+        role:  res.claims.role,
+      }
+      return user.value
+    } catch {
+      return null
+    }
+  }
+
   const logout = async () => {
     clearAuth()
     await navigateTo('/auth/login')
@@ -64,9 +90,12 @@ export const useAuth = () => {
     token: readonly(token),
     user:  readonly(user),
     isAuthenticated,
+    role,
+    canViewFinancials,
     login,
     logout,
     setAuth,
     clearAuth,
+    fetchMe,
   }
 }

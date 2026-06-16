@@ -1,8 +1,10 @@
 <script setup lang="ts">
 definePageMeta({ layout: "dashboard" });
 
-const { isLoading, stats, recentTransactions, lowStockProducts } =
+const { isLoading, stats, recentTransactions, lowStockProducts, topProducts } =
   useDashboard();
+
+const { canViewFinancials } = useAuth();
 
 const statusClass = (status: string) => ({
   "badge-pending": status === "pending",
@@ -39,6 +41,18 @@ const iconPaths: Record<string, string> = {
   products:
     "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
 };
+
+const topLimit = ref(5);
+
+const visibleTopProducts = computed(() =>
+  topProducts.value.slice(0, topLimit.value),
+);
+
+const barWidth = (qty: number) => {
+  const max = topProducts.value[0]?.totalQtySold ?? 0;
+  if (max === 0) return 0;
+  return Math.max(4, Math.round((qty / max) * 100));
+};
 </script>
 
 <template>
@@ -61,7 +75,7 @@ const iconPaths: Record<string, string> = {
     </div>
 
     <!-- Stat cards -->
-    <div class="stat-grid">
+    <div v-if="canViewFinancials" class="stat-grid">
       <template v-if="isLoading">
         <div v-for="i in 4" :key="i" class="stat-card stat-skeleton" />
       </template>
@@ -315,6 +329,75 @@ const iconPaths: Record<string, string> = {
               Payments
             </NuxtLink>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel top-products-panel">
+      <div class="panel-head">
+        <h2 class="panel-title">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M3 3v18h18" />
+            <path d="M18 17V9M13 17V5M8 17v-3" />
+          </svg>
+          Top Products
+        </h2>
+        <div class="top-seg">
+          <button
+            v-for="n in [5, 10, 20]"
+            :key="n"
+            class="top-seg-btn"
+            :class="{ 'top-seg-btn--active': topLimit === n }"
+            @click="topLimit = n"
+          >
+            {{ n }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="isLoading" class="table-skeleton">
+        <div v-for="i in 5" :key="i" class="table-skeleton-row" />
+      </div>
+
+      <div v-else-if="visibleTopProducts.length === 0" class="empty-state">
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <path d="M3 3v18h18" />
+          <path d="M18 17V9M13 17V5M8 17v-3" />
+        </svg>
+        <span>No sales data yet</span>
+      </div>
+
+      <div v-else class="top-list">
+        <div v-for="(p, i) in visibleTopProducts" :key="p.id" class="top-row">
+          <span class="top-rank">{{ i + 1 }}</span>
+          <div class="top-info">
+            <p class="top-name">{{ p.name }}</p>
+            <p class="top-sku">{{ p.sku }}</p>
+          </div>
+          <div class="top-bar-wrap">
+            <div
+              class="top-bar"
+              :style="{ width: `${barWidth(p.totalQtySold)}%` }"
+            />
+          </div>
+          <span class="top-qty"
+            >{{ p.totalQtySold.toLocaleString("id-ID") }}
+            <span class="top-qty-unit">sold</span></span
+          >
         </div>
       </div>
     </div>

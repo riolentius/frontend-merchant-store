@@ -3,6 +3,8 @@ import type { Transaction } from "../../../composables/useTransactions";
 
 definePageMeta({ layout: "dashboard" });
 
+const { canViewFinancials } = useAuth();
+
 const { $api } = useNuxtApp();
 const { formatRupiah, formatDate, statusColor, paymentStatusColor } =
   useTransactions();
@@ -74,7 +76,7 @@ const draftCount = computed(
     </PageHeader>
 
     <!-- Summary strip -->
-    <div class="summary-strip">
+    <div v-if="canViewFinancials" class="summary-strip">
       <div class="strip-card">
         <p class="strip-val">{{ formatRupiah(totalRevenue) }}</p>
         <p class="strip-lbl">Completed Revenue</p>

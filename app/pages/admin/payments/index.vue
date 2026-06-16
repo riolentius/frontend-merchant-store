@@ -3,6 +3,8 @@ import type { Transaction } from "../../../composables/useTransactions";
 
 definePageMeta({ layout: "dashboard" });
 
+const { canViewFinancials } = useAuth();
+
 const { $api } = useNuxtApp();
 const { formatRupiah, formatDate, paymentStatusColor } = useTransactions();
 const router = useRouter();
@@ -110,7 +112,7 @@ const totalTransfer = computed(() =>
     </PageHeader>
 
     <!-- Summary -->
-    <div class="summary-strip">
+    <div v-if="canViewFinancials" class="summary-strip">
       <div class="strip-card">
         <p class="strip-val">{{ formatRupiah(totalCollected) }}</p>
         <p class="strip-lbl">Total Collected</p>

@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import Sidebar from "./Sidebar.vue";
 import TopBar from "./TopBar.vue";
+import { USE_MOCK } from "../mocks";
 
 const sidebarOpen = ref(false);
 const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value;
 };
+
+const { role, fetchMe } = useAuth();
+onMounted(() => {
+  if (!USE_MOCK && !role.value) fetchMe();
+});
 </script>
 
 <template>
