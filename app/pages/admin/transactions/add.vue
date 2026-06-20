@@ -5,8 +5,10 @@ definePageMeta({ layout: "dashboard" });
 
 const { $api } = useNuxtApp();
 const { apiFetch } = useApiFetch();
-const { fetchCategories, getCategoryName } = useCategories();
+const { categories, fetchCategories, getCategoryName, getCategoryIdByCode } =
+  useCategories();
 const { formatRupiah } = useProducts();
+const { notifyError, notifySuccess, notifyWarn } = useNotify();
 const router = useRouter();
 
 const isLoading = ref(true);
@@ -20,15 +22,29 @@ interface Customer {
   categoryId?: string;
 }
 
+// ── Customer: existing vs new ─────────────────────────────
+const customerMode = ref<"existing" | "new">("existing");
+
 const customers = ref<Customer[]>([]);
 const selectedCustomer = ref<Customer | null>(null);
 const customerSearch = ref("");
 const isFetchingCustomer = ref(false);
 
+const newCustomer = reactive({
+  fullName: "",
+  email: "",
+  phone: "",
+  categoryCode: "REGULAR" as string,
+});
+
+const availableStock = (p: Product) =>
+  Math.max(0, (p.stockOnHand ?? 0) - (p.stockReserved ?? 0));
+
+// ── Products / cart ───────────────────────────────────────
 const products = ref<Product[]>([]);
-// Plain non-reactive map first, then assign to ref at once
 const priceMap = ref<Record<string, Record<string, string>>>({});
 const showProductPicker = ref(false);
+const productSearch = ref("");
 
 interface CartItem {
   product: Product;
@@ -37,7 +53,48 @@ interface CartItem {
 }
 const cart = ref<CartItem[]>([]);
 const notes = ref("");
-const status = ref<"draft" | "pending">("pending");
+const status = ref<"pending">("pending");
+
+// ── Derived customer state ────────────────────────────────
+const splitName = (full: string) => {
+  const parts = full.trim().split(/\s+/);
+  const firstName = parts.shift() ?? "";
+  const lastName = parts.join(" ");
+  return { firstName, lastName: lastName || undefined };
+};
+
+// Pricing is driven by whichever category is active right now.
+const activeCategoryId = computed(() =>
+  customerMode.value === "new"
+    ? (getCategoryIdByCode(newCustomer.categoryCode) ?? null)
+    : (selectedCustomer.value?.categoryId ?? null),
+);
+
+const isNewCustomerValid = computed(
+  () =>
+    newCustomer.fullName.trim() !== "" &&
+    !!getCategoryIdByCode(newCustomer.categoryCode),
+);
+const hasCustomer = computed(() =>
+  customerMode.value === "existing"
+    ? !!selectedCustomer.value
+    : isNewCustomerValid.value,
+);
+
+const setMode = (m: "existing" | "new") => {
+  customerMode.value = m;
+  cart.value = [];
+  showProductPicker.value = false;
+  if (m === "new") selectedCustomer.value = null;
+};
+
+// Changing the new customer's category invalidates captured cart prices.
+watch(
+  () => newCustomer.categoryCode,
+  () => {
+    cart.value = [];
+  },
+);
 
 onMounted(async () => {
   await fetchCategories();
@@ -49,25 +106,21 @@ onMounted(async () => {
     customers.value = cRes.items ?? [];
     products.value = (pRes.items ?? []).filter((p) => p.isActive);
 
-    // Build price map using useApiFetch (handles auth automatically)
     const map: Record<string, Record<string, string>> = {};
-
     for (const p of products.value) {
+      map[p.id] = {};
       try {
         const data = await apiFetch<any>(`/products/${p.id}/prices`);
         const prices = Array.isArray(data) ? data : (data?.value ?? []);
-        map[p.id] = {};
-        for (const pr of prices) {
+        for (const pr of prices)
           if (pr.categoryId) map[p.id][pr.categoryId] = pr.amount;
-        }
       } catch {
-        map[p.id] = {};
+        /* leave empty */
       }
     }
-
     priceMap.value = map;
   } catch (err) {
-    console.error(err);
+    notifyError(err, "Failed to load data");
   } finally {
     isLoading.value = false;
   }
@@ -105,10 +158,9 @@ const selectCustomer = async (c: Customer) => {
 };
 
 const getPriceForCustomer = (productId: string): string | null => {
-  if (!selectedCustomer.value?.categoryId) return null;
-  const entry = priceMap.value[productId];
-  if (!entry) return null;
-  return entry[selectedCustomer.value.categoryId] ?? null;
+  const catId = activeCategoryId.value;
+  if (!catId) return null;
+  return priceMap.value[productId]?.[catId] ?? null;
 };
 
 const cartProductIds = computed(() => cart.value.map((i) => i.product.id));
@@ -121,38 +173,92 @@ const availableProducts = computed(() =>
   ),
 );
 
+// Autocomplete: every token must appear in name+sku, any order.
+const pickerProducts = computed(() => {
+  const q = productSearch.value.toLowerCase().trim();
+  if (!q) return availableProducts.value;
+  const tokens = q.split(/\s+/);
+  return availableProducts.value.filter((p) => {
+    const hay = `${p.name} ${p.sku ?? ""}`.toLowerCase();
+    return tokens.every((t) => hay.includes(t));
+  });
+});
+
+const openPicker = () => {
+  productSearch.value = "";
+  showProductPicker.value = true;
+};
+const closePicker = () => {
+  productSearch.value = "";
+  showProductPicker.value = false;
+};
+
 const addToCart = (product: Product) => {
   const price = getPriceForCustomer(product.id);
   if (!price) return;
+  if (availableStock(product) < 1) {
+    notifyWarn("Out of stock", `${product.name} has no available stock.`);
+    return;
+  }
   cart.value.push({ product, qty: 1, unitPrice: price });
-  showProductPicker.value = false;
+  closePicker();
 };
 
 const removeFromCart = (i: number) => cart.value.splice(i, 1);
 const updateQty = (i: number, qty: number) => {
-  if (qty >= 1) cart.value[i].qty = qty;
+  const item = cart.value[i];
+  if (!item) return;
+  const max = availableStock(item.product);
+  let next = Number.isFinite(qty) ? Math.floor(qty) : 1;
+  if (next < 1) next = 1;
+  if (next > max) {
+    next = max;
+    notifyWarn("Stock limit", `Only ${max} of ${item.product.name} available.`);
+  }
+  item.qty = next;
 };
+
 const grandTotal = computed(() =>
   cart.value.reduce((s, i) => s + parseFloat(i.unitPrice) * i.qty, 0),
 );
-const canSave = computed(() => selectedCustomer.value && cart.value.length > 0);
+const canSave = computed(() => hasCustomer.value && cart.value.length > 0);
 
 const handleSave = async () => {
   if (!canSave.value) return;
   isSaving.value = true;
   try {
+    let customerId: string;
+    if (customerMode.value === "new") {
+      const { firstName, lastName } = splitName(newCustomer.fullName);
+      const created = await $api<{ id: string }>("/customers", {
+        method: "POST",
+        body: {
+          firstName,
+          lastName,
+          email: newCustomer.email.trim() || undefined,
+          phone: newCustomer.phone.trim() || undefined,
+          categoryId:
+            getCategoryIdByCode(newCustomer.categoryCode) || undefined,
+        },
+      });
+      customerId = created.id;
+    } else {
+      customerId = selectedCustomer.value!.id;
+    }
+
     await $api("/transactions", {
       method: "POST",
       body: {
-        customerId: selectedCustomer.value!.id,
+        customerId,
         status: status.value,
         notes: notes.value.trim() || undefined,
         items: cart.value.map((i) => ({ productId: i.product.id, qty: i.qty })),
       },
     });
+    notifySuccess("Transaction created");
     router.push("/admin/transactions");
   } catch (err) {
-    console.error("Failed to create transaction:", err);
+    notifyError(err, "Failed to create transaction");
   } finally {
     isSaving.value = false;
   }
@@ -187,87 +293,158 @@ const handleSave = async () => {
     <form v-else novalidate @submit.prevent="handleSave">
       <div class="form-layout">
         <!-- Step 1: Customer -->
+        <!-- Step 1: Customer -->
         <FormSection
-          title="1. Select Customer"
-          subtitle="Choose who this transaction is for"
+          title="1. Customer"
+          subtitle="Pick an existing customer or add a new one"
         >
-          <SearchInput
-            v-model="customerSearch"
-            placeholder="Search customer…"
-          />
-          <div class="customer-grid">
-            <div
-              v-for="c in filteredCustomers"
-              :key="c.id"
-              class="customer-card"
-              :class="{
-                'customer-card--active': selectedCustomer?.id === c.id,
-                'customer-card--loading':
-                  isFetchingCustomer && selectedCustomer?.id === c.id,
-              }"
-              @click="selectCustomer(c)"
+          <div class="mode-tabs">
+            <button
+              type="button"
+              class="mode-tab"
+              :class="{ 'mode-tab--active': customerMode === 'existing' }"
+              @click="setMode('existing')"
             >
-              <div class="customer-avatar">
-                {{ c.firstName.slice(0, 2).toUpperCase() }}
-              </div>
-              <div class="customer-info">
-                <p class="customer-name">{{ fullName(c) }}</p>
-                <CategoryBadge
-                  v-if="
-                    c.categoryId ||
-                    (selectedCustomer?.id === c.id &&
-                      selectedCustomer?.categoryId)
-                  "
-                  :category="
-                    getCategoryName(
-                      c.categoryId ?? selectedCustomer?.categoryId,
-                    )
-                  "
-                />
-                <span v-else class="no-category">No category</span>
-              </div>
+              Existing Customer
+            </button>
+            <button
+              type="button"
+              class="mode-tab"
+              :class="{ 'mode-tab--active': customerMode === 'new' }"
+              @click="setMode('new')"
+            >
+              New Customer
+            </button>
+          </div>
+
+          <!-- Existing -->
+          <template v-if="customerMode === 'existing'">
+            <SearchInput
+              v-model="customerSearch"
+              placeholder="Search customer…"
+            />
+            <div class="customer-grid">
               <div
-                v-if="selectedCustomer?.id === c.id && !isFetchingCustomer"
-                class="customer-check"
+                v-for="c in filteredCustomers"
+                :key="c.id"
+                class="customer-card"
+                :class="{
+                  'customer-card--active': selectedCustomer?.id === c.id,
+                  'customer-card--loading':
+                    isFetchingCustomer && selectedCustomer?.id === c.id,
+                }"
+                @click="selectCustomer(c)"
               >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
+                <div class="customer-avatar">
+                  {{ c.firstName.slice(0, 2).toUpperCase() }}
+                </div>
+                <div class="customer-info">
+                  <p class="customer-name">{{ fullName(c) }}</p>
+                  <CategoryBadge
+                    v-if="
+                      c.categoryId ||
+                      (selectedCustomer?.id === c.id &&
+                        selectedCustomer?.categoryId)
+                    "
+                    :category="
+                      getCategoryName(
+                        c.categoryId ?? selectedCustomer?.categoryId,
+                      )
+                    "
+                  />
+                  <span v-else class="no-category">No category</span>
+                </div>
+                <div
+                  v-if="selectedCustomer?.id === c.id && !isFetchingCustomer"
+                  class="customer-check"
                 >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-              <div
-                v-if="isFetchingCustomer && selectedCustomer?.id === c.id"
-                class="customer-loading"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  class="spin"
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <div
+                  v-if="isFetchingCustomer && selectedCustomer?.id === c.id"
+                  class="customer-loading"
                 >
-                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                </svg>
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    class="spin"
+                  >
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                </div>
               </div>
             </div>
-          </div>
-          <p v-if="!selectedCustomer" class="field-hint">
-            Select a customer to continue
-          </p>
-          <p v-else-if="!selectedCustomer.categoryId" class="field-warn">
-            ⚠️ This customer has no pricing category.
-            <NuxtLink :to="`/admin/customers/${selectedCustomer.id}/edit`"
-              >Assign a category →</NuxtLink
-            >
-          </p>
+            <p v-if="!selectedCustomer" class="field-hint">
+              Select a customer to continue
+            </p>
+            <p v-else-if="!selectedCustomer.categoryId" class="field-warn">
+              ⚠️ This customer has no pricing category.
+              <NuxtLink :to="`/admin/customers/${selectedCustomer.id}/edit`"
+                >Assign a category →</NuxtLink
+              >
+            </p>
+          </template>
+
+          <!-- New -->
+          <template v-else>
+            <div class="new-customer">
+              <div class="field-group">
+                <label class="field-label"
+                  >Full Name <span class="req">*</span></label
+                >
+                <InputText
+                  v-model="newCustomer.fullName"
+                  placeholder="e.g. Budi Santoso"
+                  fluid
+                />
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label class="field-label">Phone</label>
+                  <InputText
+                    v-model="newCustomer.phone"
+                    placeholder="e.g. 081234567890"
+                    fluid
+                  />
+                </div>
+                <div class="field-group">
+                  <label class="field-label">Email</label>
+                  <InputText
+                    v-model="newCustomer.email"
+                    type="email"
+                    placeholder="optional"
+                    fluid
+                  />
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field-label"
+                  >Pricing Category <span class="req">*</span></label
+                >
+                <select v-model="newCustomer.categoryCode" class="cat-select">
+                  <option v-for="c in categories" :key="c.code" :value="c.code">
+                    {{ c.name }} — {{ c.description }}
+                  </option>
+                </select>
+              </div>
+              <p class="field-hint">
+                This customer is created when you save the transaction.
+              </p>
+            </div>
+          </template>
         </FormSection>
 
         <!-- Step 2: Items -->
@@ -291,21 +468,19 @@ const handleSave = async () => {
               </div>
               <span class="cart-price">{{ formatRupiah(item.unitPrice) }}</span>
               <div class="qty-control">
-                <button
-                  type="button"
-                  class="qty-btn"
-                  @click="updateQty(i, item.qty - 1)"
+                <InputText
+                  :model-value="String(item.qty)"
+                  type="number"
+                  min="1"
+                  :max="availableStock(item.product)"
+                  class="qty-input"
+                  @update:model-value="
+                    (v) => updateQty(i, parseInt(v as string) || 1)
+                  "
+                />
+                <span class="qty-max"
+                  >/ {{ availableStock(item.product) }}</span
                 >
-                  −
-                </button>
-                <span class="qty-val">{{ item.qty }}</span>
-                <button
-                  type="button"
-                  class="qty-btn"
-                  @click="updateQty(i, item.qty + 1)"
-                >
-                  +
-                </button>
               </div>
               <span class="cart-subtotal">{{
                 formatRupiah(parseFloat(item.unitPrice) * item.qty)
@@ -335,11 +510,11 @@ const handleSave = async () => {
             type="button"
             class="add-item-btn"
             :disabled="
-              !selectedCustomer ||
-              !selectedCustomer.categoryId ||
+              !hasCustomer ||
+              !activeCategoryId ||
               availableProducts.length === 0
             "
-            @click="showProductPicker = true"
+            @click="openPicker"
           >
             <svg
               width="14"
@@ -352,10 +527,12 @@ const handleSave = async () => {
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            <span v-if="!selectedCustomer">Select a customer first</span>
-            <span v-else-if="!selectedCustomer.categoryId"
-              >Customer has no category</span
-            >
+            <span v-if="!hasCustomer">{{
+              customerMode === "new"
+                ? "Enter customer name first"
+                : "Select a customer first"
+            }}</span>
+            <span v-else-if="!activeCategoryId">No pricing category</span>
             <span v-else-if="availableProducts.length === 0"
               >No products with prices for this category</span
             >
@@ -365,17 +542,19 @@ const handleSave = async () => {
           <div v-if="showProductPicker" class="product-picker">
             <div class="product-picker__head">
               <span>Select product</span>
-              <button
-                type="button"
-                class="picker-close"
-                @click="showProductPicker = false"
-              >
+              <button type="button" class="picker-close" @click="closePicker">
                 ✕
               </button>
             </div>
+            <div class="product-picker__search">
+              <SearchInput
+                v-model="productSearch"
+                placeholder="Search product… (any order)"
+              />
+            </div>
             <div class="product-picker__list">
               <div
-                v-for="p in availableProducts"
+                v-for="p in pickerProducts"
                 :key="p.id"
                 class="picker-item"
                 @click="addToCart(p)"
@@ -383,15 +562,19 @@ const handleSave = async () => {
                 <div>
                   <p class="picker-name">{{ p.name }}</p>
                   <p class="picker-sku">
-                    {{ p.sku ?? "—" }} · Stock: {{ p.stockOnHand }}
+                    {{ p.sku ?? "—" }} · Available: {{ availableStock(p) }}
                   </p>
                 </div>
                 <span class="picker-price">{{
                   formatRupiah(getPriceForCustomer(p.id)!)
                 }}</span>
               </div>
-              <p v-if="availableProducts.length === 0" class="picker-empty">
-                No products available
+              <p v-if="pickerProducts.length === 0" class="picker-empty">
+                {{
+                  productSearch.trim()
+                    ? "No products match your search"
+                    : "No products available"
+                }}
               </p>
             </div>
           </div>
@@ -408,7 +591,7 @@ const handleSave = async () => {
             <label class="field-label">Initial Status</label>
             <div class="status-tabs">
               <button
-                v-for="s in ['draft', 'pending'] as const"
+                v-for="s in ['pending'] as const"
                 :key="s"
                 type="button"
                 class="status-tab"
@@ -930,5 +1113,88 @@ const handleSave = async () => {
   .cart-row {
     grid-template-columns: 1fr 80px 32px;
   }
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.mode-tab {
+  flex: 1;
+  padding: 9px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+.mode-tab--active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.new-customer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.req {
+  color: #ef4444;
+}
+.cat-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  appearance: auto;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.cat-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.product-picker__search {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.qty-input {
+  width: 72px !important;
+}
+:deep(.qty-input.p-inputtext) {
+  padding: 6px 8px;
+  font-size: 13.5px;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+.qty-max {
+  font-family: "Geist Mono", monospace;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
 }
 </style>

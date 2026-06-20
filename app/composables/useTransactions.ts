@@ -4,15 +4,16 @@
 // ============================================================
 
 export interface Transaction {
-  id:          string
-  customerId:  string
-  status:      string
-  currency:    string
-  totalAmount: string
-  notes?:      string
-  createdAt:   string
-  updatedAt:   string
-  items?:      TransactionItem[]
+  id:           string
+  customerId:   string
+  customerName: string 
+  status:       string
+  currency:     string
+  totalAmount:  string
+  notes?:       string
+  createdAt:    string
+  updatedAt:    string
+  items?:       TransactionItem[]
 }
 
 export interface TransactionItem {

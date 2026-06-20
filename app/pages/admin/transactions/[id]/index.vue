@@ -15,10 +15,25 @@ const route = useRoute();
 const router = useRouter();
 const id = route.params.id as string;
 
+interface EditItem {
+  productId: string;
+  productName: string;
+  sku?: string;
+  unitAmount: string;
+  qty: number;
+}
+
 const view = ref<TransactionView | null>(null);
 const isLoading = ref(true);
 const notFound = ref(false);
+const isEditing = ref(false);
+const isSavingItems = ref(false);
+const editItems = ref<EditItem[]>([]);
+const addPick = ref("");
 
+const products = ref<Product[]>([]);
+const priceMap = ref<Record<string, Record<string, string>>>({});
+const productsLoaded = ref(false);
 const isFulfilling = ref(false);
 const showFulfillConfirm = ref(false);
 const showCancelConfirm = ref(false);
@@ -32,6 +47,10 @@ const paymentForm = reactive({
   reference: "",
   note: "",
 });
+
+const editable = computed(() =>
+  ["draft", "pending"].includes(view.value?.status ?? ""),
+);
 
 onMounted(async () => {
   try {
@@ -48,6 +67,116 @@ const progress = computed(() =>
     ? paymentProgress(view.value.paidAmount, view.value.totalAmount)
     : 0,
 );
+
+const loadProductsForEdit = async () => {
+  if (productsLoaded.value) return;
+  const { apiFetch } = useApiFetch();
+  const pRes = await $api<{ items: Product[] }>("/products");
+  products.value = (pRes.items ?? []).filter((p) => p.isActive);
+  const map: Record<string, Record<string, string>> = {};
+  for (const p of products.value) {
+    map[p.id] = {};
+    try {
+      const data = await apiFetch<any>(`/products/${p.id}/prices`);
+      const prices = Array.isArray(data) ? data : (data?.value ?? []);
+      for (const pr of prices)
+        if (pr.categoryId) map[p.id][pr.categoryId] = pr.amount;
+    } catch {}
+  }
+  priceMap.value = map;
+  productsLoaded.value = true;
+};
+
+const getPriceForCategory = (productId: string): string | null => {
+  const catId = view.value?.categoryId;
+  if (!catId) return null;
+  return priceMap.value[productId]?.[catId] ?? null;
+};
+
+const editProductIds = computed(
+  () => new Set(editItems.value.map((i) => i.productId)),
+);
+const availableProducts = computed(() =>
+  products.value.filter(
+    (p) =>
+      !editProductIds.value.has(p.id) && getPriceForCategory(p.id) !== null,
+  ),
+);
+
+const startEdit = async () => {
+  await loadProductsForEdit();
+  editItems.value = (view.value?.items ?? []).map((i) => ({
+    productId: i.productId,
+    productName: i.productName,
+    sku: i.sku,
+    unitAmount: i.unitAmount,
+    qty: i.qty,
+  }));
+  isEditing.value = true;
+};
+
+const cancelEdit = () => {
+  isEditing.value = false;
+  editItems.value = [];
+  addPick.value = "";
+};
+
+const addEditItem = () => {
+  const p = products.value.find((x) => x.id === addPick.value);
+  if (!p) return;
+  const price = getPriceForCategory(p.id);
+  if (!price) return;
+  editItems.value.push({
+    productId: p.id,
+    productName: p.name,
+    sku: p.sku,
+    unitAmount: price,
+    qty: 1,
+  });
+  addPick.value = "";
+};
+
+const removeEditItem = (i: number) => editItems.value.splice(i, 1);
+const setQty = (i: number, qty: number) => {
+  if (qty >= 1) editItems.value[i].qty = qty;
+};
+
+const editedTotal = computed(() =>
+  editItems.value.reduce((s, i) => s + parseFloat(i.unitAmount) * i.qty, 0),
+);
+
+// Payment consequence vs what's already been paid
+const paymentDelta = computed(() => {
+  const paid = parseFloat(view.value?.paidAmount ?? "0");
+  if (paid <= 0) return null;
+  const diff = +(editedTotal.value - paid).toFixed(2);
+  if (diff > 0) return { kind: "under" as const, amount: diff };
+  if (diff < 0) return { kind: "over" as const, amount: -diff };
+  return { kind: "settled" as const, amount: 0 };
+});
+
+const saveItems = async () => {
+  if (editItems.value.length === 0) return;
+  isSavingItems.value = true;
+  try {
+    await $api(`/transactions/${id}/items`, {
+      method: "PUT",
+      body: {
+        items: editItems.value.map((i) => ({
+          productId: i.productId,
+          qty: i.qty,
+        })),
+      },
+    });
+    view.value = await $api<TransactionView>(`/transactions/${id}/view`);
+    isEditing.value = false;
+    editItems.value = [];
+  } catch (err) {
+    console.error("Failed to save items:", err);
+  } finally {
+    isSavingItems.value = false;
+  }
+};
 
 const canConfirm = computed(() => view.value?.status === "draft");
 const canFulfill = computed(() => view.value?.status === "pending");
@@ -149,6 +278,14 @@ const doAddPayment = async () => {
       <template #action>
         <div class="header-actions">
           <Button
+            v-if="editable && !isEditing && view"
+            label="Edit Items"
+            severity="secondary"
+            size="small"
+            outlined
+            @click="startEdit"
+          />
+          <Button
             v-if="canConfirm && view"
             label="Confirm Order"
             severity="info"
@@ -243,7 +380,8 @@ const doAddPayment = async () => {
           </div>
 
           <FormSection title="Order Items">
-            <table class="items-table">
+            <!-- Read-only -->
+            <table v-if="!isEditing" class="items-table">
               <thead>
                 <tr>
                   <th>Product</th>
@@ -273,6 +411,129 @@ const doAddPayment = async () => {
                 </tr>
               </tfoot>
             </table>
+
+            <!-- Edit mode -->
+            <div v-else class="items-edit">
+              <table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Unit Price</th>
+                    <th>Qty</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(it, i) in editItems" :key="it.productId">
+                    <td class="item-name">{{ it.productName }}</td>
+                    <td class="item-sku">{{ it.sku ?? "—" }}</td>
+                    <td class="item-amount">
+                      {{ formatRupiah(it.unitAmount) }}
+                    </td>
+                    <td class="item-qty-edit">
+                      <InputText
+                        :model-value="String(it.qty)"
+                        type="number"
+                        min="1"
+                        class="qty-input"
+                        @update:model-value="
+                          (v) => setQty(i, parseInt(v as string) || 1)
+                        "
+                      />
+                    </td>
+                    <td class="item-total">
+                      {{ formatRupiah(parseFloat(it.unitAmount) * it.qty) }}
+                    </td>
+                    <td class="item-remove">
+                      <button
+                        type="button"
+                        class="remove-btn"
+                        aria-label="Remove"
+                        @click="removeEditItem(i)"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="editItems.length === 0">
+                    <td colspan="6" class="edit-empty">
+                      No items — add at least one below.
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="total-row">
+                    <td colspan="4" class="total-label">New Grand Total</td>
+                    <td class="total-val">{{ formatRupiah(editedTotal) }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              <div class="edit-add-row">
+                <select v-model="addPick" class="edit-add-select">
+                  <option value="" disabled>Add a product…</option>
+                  <option
+                    v-for="p in availableProducts"
+                    :key="p.id"
+                    :value="p.id"
+                  >
+                    {{ p.name }}{{ p.sku ? ` (${p.sku})` : "" }} —
+                    {{ formatRupiah(getPriceForCategory(p.id) ?? "0") }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  :disabled="!addPick"
+                  @click="addEditItem"
+                >
+                  + Add
+                </button>
+              </div>
+              <p v-if="availableProducts.length === 0" class="edit-hint">
+                No more products available for this customer's price category.
+              </p>
+
+              <div
+                v-if="paymentDelta && paymentDelta.kind !== 'settled'"
+                class="pay-delta"
+                :class="`pay-delta--${paymentDelta.kind}`"
+              >
+                <template v-if="paymentDelta.kind === 'under'">
+                  {{ formatRupiah(view.paidAmount) }} already paid — saving
+                  makes this
+                  <strong
+                    >underpaid by
+                    {{ formatRupiah(paymentDelta.amount) }}</strong
+                  >.
+                </template>
+                <template v-else>
+                  {{ formatRupiah(view.paidAmount) }} already paid — saving
+                  makes this
+                  <strong
+                    >overpaid by {{ formatRupiah(paymentDelta.amount) }}</strong
+                  >
+                  (refund may be needed).
+                </template>
+              </div>
+
+              <div class="edit-actions">
+                <button type="button" class="btn-secondary" @click="cancelEdit">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="btn-save"
+                  :disabled="editItems.length === 0 || isSavingItems"
+                  @click="saveItems"
+                >
+                  {{ isSavingItems ? "Saving…" : "Save Items" }}
+                </button>
+              </div>
+            </div>
           </FormSection>
 
           <FormSection title="Payment History">
@@ -1041,5 +1302,97 @@ const doAddPayment = async () => {
   .field-row {
     grid-template-columns: 1fr;
   }
+}
+
+.items-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.item-qty-edit {
+  width: 90px;
+}
+.qty-input {
+  width: 72px !important;
+}
+:deep(.qty-input.p-inputtext) {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.item-remove {
+  width: 40px;
+  text-align: right;
+}
+.remove-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.remove-btn:hover {
+  background: #fee2e2;
+}
+.edit-empty {
+  color: #94a3b8;
+  font-size: 12.5px;
+  padding: 14px 0;
+  text-align: center;
+}
+.edit-hint {
+  color: #94a3b8;
+  font-size: 12.5px;
+  margin: 0;
+}
+.edit-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.edit-add-select {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  appearance: auto;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.edit-add-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.pay-delta {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.pay-delta--under {
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid #fde68a;
+}
+.pay-delta--over {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 </style>

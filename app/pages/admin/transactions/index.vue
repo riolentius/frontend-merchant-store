@@ -170,7 +170,7 @@ const draftCount = computed(
             </tr>
             <tr v-for="t in filtered" :key="t.id">
               <td class="td-id">{{ t.id.slice(0, 8) }}…</td>
-              <td class="td-muted">{{ t.customerId.slice(0, 8) }}…</td>
+              <td class="td-customer">{{ t.customerName || "—" }}</td>
               <td class="td-muted">{{ t.items?.length ?? 0 }} item(s)</td>
               <td class="td-amount">{{ formatRupiah(t.totalAmount) }}</td>
               <td>

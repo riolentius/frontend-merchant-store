@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import type { CustomerTxn } from "../../../../composables/useCustomerTransactions";
+
 definePageMeta({ layout: "dashboard" });
 
 const { $api } = useNuxtApp();
 const { fetchCategories, getCategoryName } = useCategories();
+const { formatRupiah, formatDate, statusColor } = useTransactions();
+const { fetchForCustomer } = useCustomerTransactions();
+const { notifyError } = useNotify();
 const route = useRoute();
 const router = useRouter();
 const id = route.params.id as string;
@@ -36,6 +41,24 @@ const showDeleteConfirm = ref(false);
 const showDeleteAddrConfirm = ref(false);
 const deleteAddrTarget = ref<string | null>(null);
 
+const txns = ref<CustomerTxn[]>([]);
+const totalOutstanding = ref("0");
+const txnLoading = ref(true);
+
+const paidPct = (t: CustomerTxn) => {
+  const total = parseFloat(t.totalAmount);
+  if (!total) return 0;
+  return Math.min(100, Math.round((parseFloat(t.paidAmount) / total) * 100));
+};
+
+const fullName = (c: Customer) =>
+  [c.firstName, c.lastName].filter(Boolean).join(" ");
+
+const formatAddress = (a: Address) =>
+  [a.addressLine1, a.addressLine2, a.city, a.province, a.postalCode, a.country]
+    .filter(Boolean)
+    .join(", ");
+
 onMounted(async () => {
   await fetchCategories();
   try {
@@ -50,21 +73,18 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
+
+  // Transactions load independently — failure here shouldn't 404 the page
+  try {
+    const res = await fetchForCustomer(id);
+    txns.value = res.items ?? [];
+    totalOutstanding.value = res.totalOutstanding ?? "0";
+  } catch (err) {
+    notifyError(err, "Failed to load transactions");
+  } finally {
+    txnLoading.value = false;
+  }
 });
-
-const fullName = (c: Customer) =>
-  [c.firstName, c.lastName].filter(Boolean).join(" ");
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-
-const formatAddress = (a: Address) =>
-  [a.addressLine1, a.addressLine2, a.city, a.province, a.postalCode, a.country]
-    .filter(Boolean)
-    .join(", ");
 
 const confirmDeleteAddr = (addrId: string) => {
   deleteAddrTarget.value = addrId;
@@ -81,7 +101,7 @@ const doDeleteAddr = async () => {
       (a) => a.id !== deleteAddrTarget.value,
     );
   } catch (err) {
-    console.error(err);
+    notifyError(err, "Failed to delete address");
   } finally {
     showDeleteAddrConfirm.value = false;
     deleteAddrTarget.value = null;
@@ -236,6 +256,67 @@ const doDelete = () => router.push("/admin/customers");
               </div>
             </div>
           </FormSection>
+
+          <FormSection
+            title="Transactions"
+            subtitle="Orders and outstanding balance for this customer"
+          >
+            <div v-if="txnLoading" class="ct-empty">Loading…</div>
+            <div v-else-if="txns.length === 0" class="ct-empty">
+              No transactions yet.
+            </div>
+            <div v-else class="ct-list">
+              <NuxtLink
+                v-for="t in txns"
+                :key="t.id"
+                :to="`/admin/transactions/${t.id}`"
+                class="ct-row"
+              >
+                <div class="ct-row__top">
+                  <span class="ct-id">#{{ t.id.slice(0, 8) }}</span>
+                  <span class="ct-status" :style="statusColor(t.status)">{{
+                    t.status
+                  }}</span>
+                  <span class="ct-date">{{ formatDate(t.createdAt) }}</span>
+                </div>
+                <div class="ct-row__mid">
+                  <span class="ct-paid">
+                    {{ formatRupiah(t.totalAmount) }} total ·
+                    <span class="ct-paid-amt"
+                      >{{ formatRupiah(t.paidAmount) }} paid</span
+                    >
+                  </span>
+                  <span
+                    class="ct-due"
+                    :class="
+                      parseFloat(t.balanceDue) > 0
+                        ? 'ct-due--open'
+                        : 'ct-due--settled'
+                    "
+                  >
+                    {{
+                      parseFloat(t.balanceDue) > 0
+                        ? `${formatRupiah(t.balanceDue)} due`
+                        : "Settled"
+                    }}
+                  </span>
+                </div>
+                <div class="ct-bar">
+                  <div
+                    class="ct-bar__fill"
+                    :style="{ width: paidPct(t) + '%' }"
+                  />
+                </div>
+              </NuxtLink>
+            </div>
+
+            <div v-if="txns.length > 0" class="ct-footer">
+              <span>Total outstanding</span>
+              <span class="ct-footer__val">{{
+                formatRupiah(totalOutstanding)
+              }}</span>
+            </div>
+          </FormSection>
         </div>
 
         <!-- Summary -->
@@ -248,15 +329,11 @@ const doDelete = () => router.push("/admin/customers");
             v-if="customer.categoryId"
             :category="getCategoryName(customer.categoryId)"
           />
-          <div class="summary-stats">
-            <div class="summary-stat">
-              <p class="summary-stat__val">{{ addresses.length }}</p>
-              <p class="summary-stat__lbl">Addresses</p>
-            </div>
-            <div class="summary-stat">
-              <p class="summary-stat__val">—</p>
-              <p class="summary-stat__lbl">Transactions</p>
-            </div>
+          <div class="summary-stat">
+            <p class="summary-stat__val">
+              {{ txnLoading ? "…" : txns.length }}
+            </p>
+            <p class="summary-stat__lbl">Transactions</p>
           </div>
           <NuxtLink
             :to="`/admin/customers/${id}/edit`"
@@ -592,5 +669,98 @@ const doDelete = () => router.push("/admin/customers");
   .summary-card {
     position: static;
   }
+}
+
+.ct-list {
+  display: flex;
+  flex-direction: column;
+}
+.ct-row {
+  display: block;
+  text-decoration: none;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ct-row:last-child {
+  border-bottom: none;
+}
+.ct-row__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ct-id {
+  font-family: "Geist Mono", monospace;
+  font-size: 12.5px;
+  color: #64748b;
+}
+.ct-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  text-transform: capitalize;
+}
+.ct-date {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+.ct-row__mid {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+}
+.ct-paid {
+  color: #64748b;
+}
+.ct-paid-amt {
+  color: #16a34a;
+}
+.ct-due {
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ct-due--open {
+  color: #b45309;
+}
+.ct-due--settled {
+  color: #16a34a;
+}
+.ct-bar {
+  height: 5px;
+  background: #f1f5f9;
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.ct-bar__fill {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 99px;
+}
+.ct-empty {
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 14px 0;
+}
+.ct-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0 4px;
+  margin-top: 6px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #64748b;
+}
+.ct-footer__val {
+  font-family: "Geist Mono", monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: #b45309;
 }
 </style>

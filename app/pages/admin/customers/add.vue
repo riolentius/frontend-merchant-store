@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ layout: "dashboard" });
-
+const { notifyError, notifySuccess } = useNotify();
 const { $api } = useNuxtApp();
 const { categories, fetchCategories, getCategoryIdByCode } = useCategories();
 const router = useRouter();
@@ -9,8 +9,7 @@ const isLoading = ref(false);
 const showConfirmLeave = ref(false);
 
 const form = reactive({
-  firstName: "",
-  lastName: "",
+  fullName: "",
   email: "",
   phone: "",
   categoryCode: "REGULAR" as string,
@@ -28,20 +27,37 @@ const address = reactive({
 });
 
 const errors = reactive({
-  firstName: "",
-  email: "",
+  fullName: "",
   addressLine1: "",
 });
 
 onMounted(() => fetchCategories());
 
+const splitName = (full: string) => {
+  const parts = full.trim().split(/\s+/);
+  const firstName = parts.shift() ?? "";
+  const lastName = parts.join(" ");
+  return { firstName, lastName: lastName || undefined };
+};
+
+const hasAddressInput = computed(() =>
+  [
+    address.label,
+    address.addressLine1,
+    address.addressLine2,
+    address.city,
+    address.province,
+    address.postalCode,
+  ].some((v) => v.trim() !== ""),
+);
+
 const validate = () => {
-  errors.firstName = form.firstName.trim() ? "" : "First name is required";
-  errors.email = form.email.trim() ? "" : "Email is required";
-  errors.addressLine1 = address.addressLine1.trim()
-    ? ""
-    : "Address line 1 is required";
-  return !errors.firstName && !errors.email && !errors.addressLine1;
+  errors.fullName = form.fullName.trim() ? "" : "Full name is required";
+  errors.addressLine1 =
+    hasAddressInput.value && !address.addressLine1.trim()
+      ? "Address line 1 is required when adding an address"
+      : "";
+  return !errors.fullName && !errors.addressLine1;
 };
 
 const handleSave = async () => {
@@ -49,37 +65,44 @@ const handleSave = async () => {
   isLoading.value = true;
   try {
     const categoryId = getCategoryIdByCode(form.categoryCode);
+    const { firstName, lastName } = splitName(form.fullName);
 
     // Step 1 — create customer
     const customer = await $api<{ id: string }>("/customers", {
       method: "POST",
       body: {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim() || undefined,
-        email: form.email.trim(),
+        firstName,
+        lastName,
+        email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         categoryId: categoryId || undefined,
       },
     });
 
-    // Step 2 — create address linked to customer
-    await $api(`/customers/${customer.id}/addresses`, {
-      method: "POST",
-      body: {
-        label: address.label.trim() || undefined,
-        addressLine1: address.addressLine1.trim(),
-        addressLine2: address.addressLine2.trim() || undefined,
-        city: address.city.trim() || undefined,
-        province: address.province.trim() || undefined,
-        postalCode: address.postalCode.trim() || undefined,
-        country: address.country || "ID",
-        isDefault: true,
-      },
-    });
+    // Step 2 — create the address only if one was actually entered
+    if (address.addressLine1.trim()) {
+      await $api(`/customers/${customer.id}/addresses`, {
+        method: "POST",
+        body: {
+          label: address.label.trim() || undefined,
+          addressLine1: address.addressLine1.trim(),
+          addressLine2: address.addressLine2.trim() || undefined,
+          city: address.city.trim() || undefined,
+          province: address.province.trim() || undefined,
+          postalCode: address.postalCode.trim() || undefined,
+          country: address.country || "ID",
+          isDefault: true,
+        },
+      });
+    }
 
     router.push("/admin/customers");
+    notifySuccess(
+      "Customer created",
+      `${form.fullName.trim()} has been added.`,
+    );
   } catch (err: any) {
-    console.error("Failed to create customer:", err);
+    notifyError(err, "Failed to create customer");
   } finally {
     isLoading.value = false;
   }
@@ -113,45 +136,29 @@ const handleSave = async () => {
           title="Customer Information"
           subtitle="Basic contact details"
         >
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label"
-                >First Name <span class="req">*</span></label
-              >
-              <InputText
-                v-model="form.firstName"
-                placeholder="e.g. Budi"
-                fluid
-                :class="{ 'p-invalid': errors.firstName }"
-              />
-              <span v-if="errors.firstName" class="field-error">{{
-                errors.firstName
-              }}</span>
-            </div>
-            <div class="field-group">
-              <label class="field-label">Last Name</label>
-              <InputText
-                v-model="form.lastName"
-                placeholder="e.g. Santoso"
-                fluid
-              />
-            </div>
+          <div class="field-group">
+            <label class="field-label"
+              >Full Name <span class="req">*</span></label
+            >
+            <InputText
+              v-model="form.fullName"
+              placeholder="e.g. Budi Santoso"
+              fluid
+              :class="{ 'p-invalid': errors.fullName }"
+            />
+            <span v-if="errors.fullName" class="field-error">{{
+              errors.fullName
+            }}</span>
           </div>
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label"
-                >Email <span class="req">*</span></label
-              >
+              <label class="field-label">Email</label>
               <InputText
                 v-model="form.email"
                 type="email"
                 placeholder="e.g. budi@email.com"
                 fluid
-                :class="{ 'p-invalid': errors.email }"
               />
-              <span v-if="errors.email" class="field-error">{{
-                errors.email
-              }}</span>
             </div>
             <div class="field-group">
               <label class="field-label">Phone</label>
@@ -167,7 +174,7 @@ const handleSave = async () => {
         <!-- ── Address ── -->
         <FormSection
           title="Default Address"
-          subtitle="Primary address for this customer — required"
+          subtitle="Optional — for B2B customers who need delivery details"
         >
           <div class="field-group">
             <label class="field-label">Label</label>
@@ -178,9 +185,7 @@ const handleSave = async () => {
             />
           </div>
           <div class="field-group">
-            <label class="field-label"
-              >Address Line 1 <span class="req">*</span></label
-            >
+            <label class="field-label">Address Line 1</label>
             <InputText
               v-model="address.addressLine1"
               placeholder="Street name and number"
