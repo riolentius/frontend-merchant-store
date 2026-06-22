@@ -3,6 +3,8 @@ import type { TransactionView } from "../../../../composables/useTransactions";
 
 definePageMeta({ layout: "dashboard" });
 
+const { notifyError, notifySuccess, notifyWarn } = useNotify();
+
 const { $api } = useNuxtApp();
 const {
   formatRupiah,
@@ -68,6 +70,17 @@ const progress = computed(() =>
     : 0,
 );
 
+const availableStock = (p: { stockOnHand?: number; stockReserved?: number }) =>
+  Math.max(0, (p.stockOnHand ?? 0) - (p.stockReserved ?? 0));
+
+const originalQty = ref<Record<string, number>>({});
+
+const maxQtyFor = (productId: string): number => {
+  const p = products.value.find((x) => x.id === productId);
+  if (!p) return originalQty.value[productId] ?? Infinity;
+  return availableStock(p) + (originalQty.value[productId] ?? 0);
+};
+
 const loadProductsForEdit = async () => {
   if (productsLoaded.value) return;
   const { apiFetch } = useApiFetch();
@@ -96,15 +109,21 @@ const getPriceForCategory = (productId: string): string | null => {
 const editProductIds = computed(
   () => new Set(editItems.value.map((i) => i.productId)),
 );
+
 const availableProducts = computed(() =>
   products.value.filter(
     (p) =>
-      !editProductIds.value.has(p.id) && getPriceForCategory(p.id) !== null,
+      !editProductIds.value.has(p.id) &&
+      getPriceForCategory(p.id) !== null &&
+      availableStock(p) > 0,
   ),
 );
 
 const startEdit = async () => {
   await loadProductsForEdit();
+  originalQty.value = Object.fromEntries(
+    (view.value?.items ?? []).map((i) => [i.productId, i.qty]),
+  );
   editItems.value = (view.value?.items ?? []).map((i) => ({
     productId: i.productId,
     productName: i.productName,
@@ -126,6 +145,10 @@ const addEditItem = () => {
   if (!p) return;
   const price = getPriceForCategory(p.id);
   if (!price) return;
+  if (availableStock(p) < 1) {
+    notifyWarn("Out of stock", `${p.name} has no available stock.`);
+    return;
+  }
   editItems.value.push({
     productId: p.id,
     productName: p.name,
@@ -138,7 +161,16 @@ const addEditItem = () => {
 
 const removeEditItem = (i: number) => editItems.value.splice(i, 1);
 const setQty = (i: number, qty: number) => {
-  if (qty >= 1) editItems.value[i].qty = qty;
+  const item = editItems.value[i];
+  if (!item) return;
+  const max = maxQtyFor(item.productId);
+  let next = Number.isFinite(qty) ? Math.floor(qty) : 1;
+  if (next < 1) next = 1;
+  if (next > max) {
+    next = max;
+    notifyWarn("Stock limit", `Only ${max} of ${item.productName} available.`);
+  }
+  item.qty = next;
 };
 
 const editedTotal = computed(() =>
@@ -172,7 +204,7 @@ const saveItems = async () => {
     isEditing.value = false;
     editItems.value = [];
   } catch (err) {
-    console.error("Failed to save items:", err);
+    notifyError(err, "Failed to save items");
   } finally {
     isSavingItems.value = false;
   }
@@ -437,11 +469,15 @@ const doAddPayment = async () => {
                         :model-value="String(it.qty)"
                         type="number"
                         min="1"
+                        :max="maxQtyFor(it.productId)"
                         class="qty-input"
                         @update:model-value="
                           (v) => setQty(i, parseInt(v as string) || 1)
                         "
                       />
+                      <span class="qty-max-hint"
+                        >max {{ maxQtyFor(it.productId) }}</span
+                      >
                     </td>
                     <td class="item-total">
                       {{ formatRupiah(parseFloat(it.unitAmount) * it.qty) }}
@@ -1394,5 +1430,31 @@ const doAddPayment = async () => {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+.qty-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.qty-input {
+  width: 64px !important;
+}
+.qty-max {
+  font-family: "Geist Mono", monospace;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.item-qty-edit {
+  width: 120px;
+  padding-right: 16px;
+}
+
+.qty-max-hint {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 3px;
 }
 </style>

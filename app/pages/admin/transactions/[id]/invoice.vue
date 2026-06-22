@@ -187,11 +187,6 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
         <div class="a4-header__left">
           <p class="a4-merchant-name">{{ merchant.name }}</p>
           <p class="a4-merchant-phone">{{ merchant.phone }}</p>
-          <div class="a4-transfer-stamp">
-            <p v-for="line in merchant.transferInfo.split('\n')" :key="line">
-              {{ line }}
-            </p>
-          </div>
         </div>
         <div class="a4-header__right">
           <table class="a4-meta">
@@ -239,15 +234,10 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
             <td class="a4-td a4-td--right">0,00</td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.lineTotal) }}</td>
           </tr>
-          <tr
-            v-for="i in Math.max(0, 5 - view.items.length)"
-            :key="`pad-${i}`"
-            class="a4-tr--pad"
-          >
-            <td class="a4-td" colspan="6">&nbsp;</td>
-          </tr>
         </tbody>
       </table>
+
+      <div class="a4-spacer" />
 
       <div class="a4-footer">
         <div class="a4-sigs">
@@ -372,17 +362,21 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   }
   .invoice-shell {
     background: white;
-    padding: 0;
+    min-height: 0 !important;
+    display: block !important;
+    padding: 0 !important;
     gap: 0;
   }
   .a4-paper {
-    box-shadow: none !important;
-    width: 210mm !important;
-    height: 297mm !important;
-    max-height: 297mm !important;
-    padding: 8mm 10mm !important;
-    margin: 0 !important;
+    width: 9.5in !important;
+    height: 5.5in !important;
+    max-height: 5.5in !important;
     overflow: hidden !important;
+    box-shadow: none !important;
+    padding: 3mm 6mm !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
   .thermal-paper {
     box-shadow: none !important;
@@ -392,7 +386,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   }
   @page {
     margin: 0;
-    size: A4;
+    size: 9.5in 5.5in;
   }
 }
 </style>
@@ -501,10 +495,11 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
 /* A4 */
 .a4-paper {
-  width: 210mm;
-  height: 297mm;
+  width: 9.5in;
+  height: 5.5in;
+  max-height: 5.5in;
   background: #fff;
-  padding: 8mm 10mm;
+  padding: 3mm 6mm;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
   font-family: Arial, "Helvetica Neue", sans-serif;
   font-size: 8.5pt;
@@ -512,6 +507,34 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.a4-spacer {
+  flex: 1 1 auto;
+  min-height: 4mm;
+}
+
+.a4-total-row--grand .a4-total-label,
+.a4-total-row--grand .a4-total-sep,
+.a4-total-row--grand .a4-total-val {
+  font-size: 12pt;
+  font-weight: 700;
+  color: #000;
+}
+.a4-total-row--grand .a4-total-val {
+  font-size: 13pt;
+}
+
+.a4-table {
+  margin-top: 4mm;
+}
+.a4-table thead th {
+  padding-bottom: 2.5mm;
+}
+.a4-table tbody tr:first-child td {
+  padding-top: 2.5mm;
 }
 
 .a4-header {
@@ -522,7 +545,13 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   gap: 8mm;
 }
 .a4-header__left {
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-height: 20mm;
+  display: flex;
+  flex-direction: column;
+}
+.a4-header__right {
+  flex: 1 1 0;
 }
 .a4-merchant-name {
   font-size: 13pt;
@@ -550,9 +579,6 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   margin: 0;
 }
 
-.a4-header__right {
-  flex: 1;
-}
 .a4-meta {
   border-collapse: collapse;
   font-size: 8.5pt;
@@ -624,7 +650,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   font-size: 8.5pt;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
-  height: 7mm;
+  height: 6mm;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -663,7 +689,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   text-align: center;
 }
 .a4-sig__space {
-  height: 14mm;
+  height: 10mm;
   position: relative;
 }
 .a4-sig__space--stamp {
@@ -724,11 +750,6 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   font-family: "Courier New", monospace;
   font-weight: 500;
   color: #000;
-}
-.a4-total-row--grand .a4-total-label,
-.a4-total-row--grand .a4-total-val {
-  font-weight: 700;
-  font-size: 9.5pt;
 }
 .a4-divider {
   border-top: 1px solid #999;
