@@ -7,16 +7,34 @@ const { $api } = useNuxtApp();
 const { fetchCategories, categories } = useCategories();
 const { createPrices, formatRupiah } = useProducts();
 const router = useRouter();
-
+const ZERO_ALLOWED_CODES = ["FREE"];
+const {
+  categories: productCategories,
+  fetchProductCategories,
+  createProductCategory,
+  normalize,
+} = useProductCategories();
+const { notifyError } = useNotify();
 const isLoading = ref(false);
 const showConfirmLeave = ref(false);
 
+const showNewCategory = ref(false);
+const newCategoryName = ref("");
+const isCreatingCategory = ref(false);
+
+const liveNewName = computed(() => normalize(newCategoryName.value));
+const newNameDuplicate = computed(
+  () =>
+    !!liveNewName.value &&
+    productCategories.value.some((c) => c.name === liveNewName.value),
+);
 const form = reactive({
   name: "",
-  skuUnit: "", // selected from dropdown e.g. "KG"
-  skuSuffix: "", // optional custom suffix e.g. "BERAS-001"
+  skuUnit: "",
+  skuSuffix: "",
   stockOnHand: 0,
-  cost: "", // cost price as string
+  cost: "",
+  categoryId: "",
 });
 
 // Price per category
@@ -24,15 +42,58 @@ const priceInputs = ref<
   { categoryId: string; categoryName: string; code: string; amount: string }[]
 >([]);
 
+const allowsZero = (code: string) => ZERO_ALLOWED_CODES.includes(code);
+
+const enforceCostFloor = (p: {
+  code: string;
+  amount: string;
+  categoryName: string;
+}) => {
+  if (allowsZero(p.code)) return;
+  const amt = parseFloat(p.amount);
+  const cost = parseFloat(form.cost);
+  if (isNaN(cost) || cost <= 0) return;
+  if (!isNaN(amt) && amt > 0 && amt < cost) {
+    p.amount = String(cost);
+    notifyWarn(
+      "Adjusted to cost",
+      `${p.categoryName} can't be below cost — set to ${formatRupiah(cost)}.`,
+    );
+  }
+};
+
+const submitNewCategory = async () => {
+  if (!liveNewName.value || newNameDuplicate.value) return;
+  isCreatingCategory.value = true;
+  try {
+    const created = await createProductCategory(newCategoryName.value);
+    form.categoryId = created.id; // auto-select the new one
+    showNewCategory.value = false;
+    newCategoryName.value = "";
+  } catch (err) {
+    notifyError(err, "Failed to create category");
+  } finally {
+    isCreatingCategory.value = false;
+  }
+};
+
+watch(
+  () => form.cost,
+  () => {
+    priceInputs.value.forEach((p) => enforceCostFloor(p));
+  },
+);
+
 const errors = reactive({
   name: "",
   skuUnit: "",
   cost: "",
+  categoryId: "",
   prices: [] as string[],
 });
 
 onMounted(async () => {
-  await fetchCategories();
+  await Promise.all([fetchCategories(), fetchProductCategories()]);
   priceInputs.value = categories.value.map((c) => ({
     categoryId: c.id,
     categoryName: c.name,
@@ -41,6 +102,29 @@ onMounted(async () => {
   }));
   errors.prices = categories.value.map(() => "");
 });
+
+const costNum = parseFloat(form.cost);
+errors.prices = priceInputs.value.map((p) => {
+  const amt = parseFloat(p.amount);
+
+  if (allowsZero(p.code)) {
+    return p.amount === "" || isNaN(amt) || amt < 0
+      ? "Enter a price (0 is allowed)"
+      : "";
+  }
+
+  if (!p.amount || isNaN(amt) || amt <= 0)
+    return "Price must be greater than 0";
+  if (!isNaN(costNum) && amt < costNum) return "Price cannot be below cost";
+  return "";
+});
+
+const belowCost = (p: { code: string; amount: string }) => {
+  if (allowsZero(p.code)) return false;
+  const amt = parseFloat(p.amount);
+  const cost = parseFloat(form.cost);
+  return !isNaN(amt) && !isNaN(cost) && amt > 0 && amt < cost;
+};
 
 // Build the full SKU string: UNIT-SUFFIX or just UNIT
 const fullSku = computed(() => {
@@ -60,6 +144,7 @@ const catColor = (code: string) => {
 const validate = () => {
   errors.name = form.name.trim() ? "" : "Product name is required";
   errors.skuUnit = form.skuUnit ? "" : "Please select a SKU unit";
+  errors.category = form.categoryId ? "" : "Please select a category";
   errors.cost =
     form.cost && parseFloat(form.cost) >= 0 ? "" : "Cost price is required";
   errors.prices = priceInputs.value.map((p) =>
@@ -68,6 +153,7 @@ const validate = () => {
   return (
     !errors.name &&
     !errors.skuUnit &&
+    !errors.category &&
     !errors.cost &&
     errors.prices.every((e) => !e)
   );
@@ -81,6 +167,7 @@ const handleSave = async () => {
       method: "POST",
       body: {
         name: form.name.trim(),
+        categoryId: form.categoryId,
         sku: fullSku.value || undefined,
         cost: form.cost,
         stockOnHand: form.stockOnHand,
@@ -205,6 +292,75 @@ const margin = (sellingAmount: string) => {
             </span>
           </div>
 
+          <div class="field-group">
+            <label class="field-label"
+              >Category <span class="req">*</span></label
+            >
+
+            <div v-if="!showNewCategory" class="cat-row">
+              <select
+                v-model="form.categoryId"
+                class="cat-select"
+                :class="{ 'cat-select--error': errors.category }"
+              >
+                <option value="" disabled>Select category…</option>
+                <option
+                  v-for="c in productCategories"
+                  :key="c.id"
+                  :value="c.id"
+                >
+                  {{ c.name }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="cat-new-btn"
+                @click="showNewCategory = true"
+              >
+                + New
+              </button>
+            </div>
+
+            <div v-else class="cat-new">
+              <InputText
+                v-model="newCategoryName"
+                placeholder="e.g. BERAS"
+                fluid
+                @keyup.enter="submitNewCategory"
+              />
+              <button
+                type="button"
+                class="cat-new-btn cat-new-btn--save"
+                :disabled="
+                  !liveNewName || newNameDuplicate || isCreatingCategory
+                "
+                @click="submitNewCategory"
+              >
+                {{ isCreatingCategory ? "Adding…" : "Add" }}
+              </button>
+              <button
+                type="button"
+                class="cat-new-btn"
+                @click="
+                  showNewCategory = false;
+                  newCategoryName = '';
+                "
+              >
+                Cancel
+              </button>
+            </div>
+
+            <span v-if="newCategoryName && !newNameDuplicate" class="cat-hint">
+              Will be saved as <strong>{{ liveNewName }}</strong>
+            </span>
+            <span v-if="newNameDuplicate" class="cat-hint cat-hint--dupe">
+              “{{ liveNewName }}” already exists — pick it from the list.
+            </span>
+            <span v-if="errors.category" class="field-error">{{
+              errors.category
+            }}</span>
+          </div>
+
           <div class="field-row">
             <div class="field-group">
               <label class="field-label">Initial Stock</label>
@@ -294,14 +450,19 @@ const margin = (sellingAmount: string) => {
                   placeholder="0"
                   fluid
                   :class="{ 'p-invalid': errors.prices[i] }"
+                  @blur="enforceCostFloor(p)"
                 />
                 <span v-if="errors.prices[i]" class="field-error">{{
                   errors.prices[i]
                 }}</span>
               </div>
               <span class="price-preview">{{ previewAmount(p.amount) }}</span>
-              <span v-if="margin(p.amount)" class="margin-badge">
-                +{{ margin(p.amount)!.pct }}%
+              <span
+                v-if="margin(p.amount)"
+                class="margin-badge"
+                :class="{ 'margin-badge--loss': belowCost(p) }"
+              >
+                {{ belowCost(p) ? "" : "+" }}{{ margin(p.amount)!.pct }}%
               </span>
               <span v-else class="margin-empty">—</span>
             </div>
@@ -610,5 +771,83 @@ const margin = (sellingAmount: string) => {
   .margin-empty {
     display: none;
   }
+}
+
+.margin-badge--loss {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.cat-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cat-new {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cat-select {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  appearance: auto;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.cat-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.cat-select--error {
+  border-color: #ef4444;
+}
+.cat-new-btn {
+  padding: 9px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.cat-new-btn:hover:not(:disabled) {
+  background: #f8fafc;
+}
+.cat-new-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cat-new-btn--save {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+.cat-new-btn--save:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.cat-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+.cat-hint strong {
+  font-family: "Geist Mono", monospace;
+  color: #0f172a;
+}
+.cat-hint--dupe {
+  color: #b45309;
 }
 </style>
