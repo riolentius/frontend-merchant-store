@@ -42,9 +42,16 @@ const showCancelConfirm = ref(false);
 const showAddPayment = ref(false);
 const isSavingPayment = ref(false);
 
+const todayISO = () => {
+  const d = new Date();
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().slice(0, 10);
+};
+
 const paymentForm = reactive({
   method: "cash",
   amount: "",
+  paidAt: todayISO(),
   senderName: "",
   reference: "",
   note: "",
@@ -274,6 +281,10 @@ const doCancel = async () => {
 
 const doAddPayment = async () => {
   if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) return;
+  if (!paymentForm.paidAt) {
+    notifyWarn("Date required", "Please set the payment date.");
+    return;
+  }
   isSavingPayment.value = true;
   try {
     await $api(`/transactions/${id}/payments`, {
@@ -282,19 +293,22 @@ const doAddPayment = async () => {
         method: paymentForm.method,
         amount: paymentForm.amount,
         currency: "IDR",
+        paidAt: new Date(`${paymentForm.paidAt}T00:00:00`).toISOString(),
         senderName: paymentForm.senderName || undefined,
         reference: paymentForm.reference || undefined,
         note: paymentForm.note || undefined,
       },
     });
     view.value = await $api<TransactionView>(`/transactions/${id}/view`);
+    notifySuccess("Payment recorded");
     showAddPayment.value = false;
     paymentForm.amount = "";
+    paymentForm.paidAt = todayISO();
     paymentForm.senderName = "";
     paymentForm.reference = "";
     paymentForm.note = "";
   } catch (err) {
-    console.error(err);
+    notifyError(err, "Failed to record payment");
   } finally {
     isSavingPayment.value = false;
   }
@@ -657,6 +671,15 @@ const doAddPayment = async () => {
                   </label>
                 </div>
                 <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label">Payment Date *</label>
+                    <input
+                      v-model="paymentForm.paidAt"
+                      type="date"
+                      class="date-input"
+                      :max="todayISO()"
+                    />
+                  </div>
                   <div class="field-group">
                     <label class="field-label">Amount (IDR) *</label>
                     <InputText
@@ -1456,5 +1479,24 @@ const doAddPayment = async () => {
   font-size: 11px;
   color: #94a3b8;
   margin-top: 3px;
+}
+.date-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.date-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 </style>

@@ -109,7 +109,6 @@ const formatDate = (d: string) =>
               <th>Name</th>
               <th>Email</th>
               <th>Phone</th>
-              <th>Category</th>
               <th>Joined</th>
               <th>Actions</th>
             </tr>
@@ -122,13 +121,6 @@ const formatDate = (d: string) =>
               <td class="td-name">{{ fullName(c) }}</td>
               <td class="td-muted">{{ c.email }}</td>
               <td class="td-mono">{{ c.phone ?? "—" }}</td>
-              <td>
-                <CategoryBadge
-                  v-if="c.categoryId"
-                  :category="getCategoryName(c.categoryId)"
-                />
-                <span v-else class="td-muted">—</span>
-              </td>
               <td class="td-muted">{{ formatDate(c.createdAt) }}</td>
               <td>
                 <ActionButtons

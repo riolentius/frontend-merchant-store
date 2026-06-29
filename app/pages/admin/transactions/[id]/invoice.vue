@@ -14,7 +14,9 @@ const address = ref<string>("");
 const isLoading = ref(true);
 const notFound = ref(false);
 const format = ref<"a4" | "thermal">("a4");
-
+const PAGE_H = 5.5 * 96;
+const MM = 96 / 25.4;
+const BOTTOM_GAP = 3 * MM;
 const merchant = {
   name: "CAHAYA GADING",
   phone: "085103992545",
@@ -51,6 +53,32 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
+
+  await nextTick();
+  pinFooterToLastPage();
+  window.addEventListener("beforeprint", pinFooterToLastPage);
+});
+
+const pinFooterToLastPage = () => {
+  const paper = document.querySelector(".a4-paper") as HTMLElement | null;
+  if (!paper) return;
+  const footer = paper.querySelector(".a4-footer") as HTMLElement | null;
+  const note = paper.querySelector(".a4-bottom-note") as HTMLElement | null;
+  const spacer = paper.querySelector(".a4-spacer") as HTMLElement | null;
+  if (!footer || !spacer) return;
+
+  spacer.style.height = "0px";
+  const footerH = footer.offsetHeight + (note?.offsetHeight ?? 0);
+  const naturalH = paper.scrollHeight;
+  const aboveH = naturalH - footerH;
+
+  const pages = Math.ceil((aboveH + footerH + BOTTOM_GAP) / PAGE_H);
+  const spacerH = Math.max(0, pages * PAGE_H - footerH - BOTTOM_GAP - aboveH);
+  spacer.style.height = `${spacerH}px`;
+};
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeprint", pinFooterToLastPage);
 });
 
 const invoiceNo = computed(() => {
@@ -229,7 +257,9 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
           <tr v-for="item in view.items" :key="item.productId" class="a4-tr">
             <td class="a4-td">{{ item.productName }}</td>
             <td class="a4-td a4-td--center">{{ item.qty }}</td>
-            <td class="a4-td a4-td--center">{{ item.sku ?? "PC" }}</td>
+            <td class="a4-td a4-td--center">
+              {{ (item.sku ?? "PC").split("-")[0] }}
+            </td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.unitAmount) }}</td>
             <td class="a4-td a4-td--right">0,00</td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.lineTotal) }}</td>
@@ -369,14 +399,15 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   }
   .a4-paper {
     width: 9.5in !important;
-    height: 5.5in !important;
-    max-height: 5.5in !important;
-    overflow: hidden !important;
+    min-height: 5.5in !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     box-shadow: none !important;
     padding: 3mm 6mm !important;
     margin: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
+    display: block !important;
+    box-sizing: border-box !important;
   }
   .thermal-paper {
     box-shadow: none !important;
@@ -502,7 +533,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   padding: 3mm 6mm;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
   font-family: Arial, "Helvetica Neue", sans-serif;
-  font-size: 8.5pt;
+  font-size: 10.5pt;
   color: #111;
   position: relative;
   overflow: hidden;
@@ -519,12 +550,12 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 .a4-total-row--grand .a4-total-label,
 .a4-total-row--grand .a4-total-sep,
 .a4-total-row--grand .a4-total-val {
-  font-size: 12pt;
+  font-size: 14pt;
   font-weight: 700;
   color: #000;
 }
 .a4-total-row--grand .a4-total-val {
-  font-size: 13pt;
+  font-size: 15pt;
 }
 
 .a4-table {
@@ -581,7 +612,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
 .a4-meta {
   border-collapse: collapse;
-  font-size: 8.5pt;
+  font-size: 10.5pt;
   width: 100%;
 }
 .a4-meta__key {
@@ -603,7 +634,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 .a4-meta__val--addr {
   max-width: 70mm;
   word-break: break-word;
-  font-size: 8pt;
+  font-size: 10pt;
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -622,35 +653,36 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   border-top: 1px solid #999;
   border-bottom: 1px solid #999;
   padding: 1mm 1.5mm;
-  font-size: 8pt;
+  font-size: 10pt;
   font-weight: 700;
   text-align: center;
   white-space: nowrap;
 }
 .a4-th--desc {
+  width: auto;
   text-align: left;
 }
 .a4-th--num {
-  width: 18mm;
-}
-.a4-th--sat {
   width: 16mm;
 }
+.a4-th--sat {
+  width: 18mm;
+}
 .a4-th--price {
-  width: 28mm;
+  width: 34mm;
 }
 .a4-th--disc {
-  width: 26mm;
+  width: 22mm;
 }
 .a4-th--total {
-  width: 30mm;
+  width: 36mm;
 }
 .a4-td {
   padding: 1.5mm 1.5mm;
-  font-size: 8.5pt;
+  font-size: 10.5pt;
+  height: 9mm;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
-  height: 6mm;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -659,8 +691,9 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   text-align: center;
 }
 .a4-td--right {
-  text-align: right;
-  font-family: "Courier New", monospace;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
 }
 .a4-tr--pad .a4-td {
   border-bottom: 0.5px solid #eee;
@@ -734,7 +767,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   display: flex;
   align-items: baseline;
   padding: 0.6mm 0;
-  font-size: 8.5pt;
+  font-size: 10.5pt;
 }
 .a4-total-label {
   width: 20mm;

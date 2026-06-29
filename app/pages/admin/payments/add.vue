@@ -31,9 +31,16 @@ const transactions = ref<TxSummary[]>([]);
 const selectedTx = ref<TxSummary | null>(null);
 const txSearch = ref("");
 
+const todayISO = () => {
+  const d = new Date();
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().slice(0, 10);
+};
+
 const paymentForm = reactive({
   method: "cash",
   amount: "",
+  paidAt: todayISO(),
   senderName: "",
   reference: "",
   note: "",

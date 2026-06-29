@@ -292,8 +292,6 @@ const handleSave = async () => {
 
     <form v-else novalidate @submit.prevent="handleSave">
       <div class="form-layout">
-        <!-- Step 1: Customer -->
-        <!-- Step 1: Customer -->
         <FormSection
           title="1. Customer"
           subtitle="Pick an existing customer or add a new one"
@@ -340,19 +338,6 @@ const handleSave = async () => {
                 </div>
                 <div class="customer-info">
                   <p class="customer-name">{{ fullName(c) }}</p>
-                  <CategoryBadge
-                    v-if="
-                      c.categoryId ||
-                      (selectedCustomer?.id === c.id &&
-                        selectedCustomer?.categoryId)
-                    "
-                    :category="
-                      getCategoryName(
-                        c.categoryId ?? selectedCustomer?.categoryId,
-                      )
-                    "
-                  />
-                  <span v-else class="no-category">No category</span>
                 </div>
                 <div
                   v-if="selectedCustomer?.id === c.id && !isFetchingCustomer"
