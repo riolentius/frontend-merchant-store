@@ -4,7 +4,6 @@ import type { TransactionView } from "../../../../composables/useTransactions";
 definePageMeta({ layout: false });
 
 const { $api } = useNuxtApp();
-const { formatDate } = useTransactions();
 const route = useRoute();
 const router = useRouter();
 const id = route.params.id as string;
@@ -14,9 +13,7 @@ const address = ref<string>("");
 const isLoading = ref(true);
 const notFound = ref(false);
 const format = ref<"a4" | "thermal">("a4");
-const PAGE_H = 5.5 * 96;
-const MM = 96 / 25.4;
-const BOTTOM_GAP = 3 * MM;
+
 const merchant = {
   name: "CAHAYA GADING",
   phone: "085103992545",
@@ -53,32 +50,6 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
-
-  await nextTick();
-  pinFooterToLastPage();
-  window.addEventListener("beforeprint", pinFooterToLastPage);
-});
-
-const pinFooterToLastPage = () => {
-  const paper = document.querySelector(".a4-paper") as HTMLElement | null;
-  if (!paper) return;
-  const footer = paper.querySelector(".a4-footer") as HTMLElement | null;
-  const note = paper.querySelector(".a4-bottom-note") as HTMLElement | null;
-  const spacer = paper.querySelector(".a4-spacer") as HTMLElement | null;
-  if (!footer || !spacer) return;
-
-  spacer.style.height = "0px";
-  const footerH = footer.offsetHeight + (note?.offsetHeight ?? 0);
-  const naturalH = paper.scrollHeight;
-  const aboveH = naturalH - footerH;
-
-  const pages = Math.ceil((aboveH + footerH + BOTTOM_GAP) / PAGE_H);
-  const spacerH = Math.max(0, pages * PAGE_H - footerH - BOTTOM_GAP - aboveH);
-  spacer.style.height = `${spacerH}px`;
-};
-
-onBeforeUnmount(() => {
-  window.removeEventListener("beforeprint", pinFooterToLastPage);
 });
 
 const invoiceNo = computed(() => {
@@ -106,9 +77,24 @@ const fmtIDR = (amount: string | number) => {
   }).format(n);
 };
 
+const fmtThermal = (amount: string | number) => {
+  const n = typeof amount === "string" ? parseFloat(amount) : amount;
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n);
+};
+
 const grandTotal = computed(() => parseFloat(view.value?.totalAmount ?? "0"));
 const totalPaid = computed(() => parseFloat(view.value?.paidAmount ?? "0"));
 const saldo = computed(() => grandTotal.value - totalPaid.value);
+const isPaid = computed(() => view.value?.paymentStatus === "paid");
+
+const lastPaidAt = computed(() => {
+  const ps = view.value?.payments ?? [];
+  if (!ps.length) return "";
+  const latest = [...ps].sort(
+    (a, b) => +new Date(b.paidAt) - +new Date(a.paidAt),
+  )[0];
+  return formatTanggal(latest.paidAt);
+});
 
 const handlePrint = () => {
   const original = document.title;
@@ -116,13 +102,6 @@ const handlePrint = () => {
   window.print();
   document.title = original;
 };
-
-const fmtThermal = (amount: string | number) => {
-  const n = typeof amount === "string" ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n);
-};
-
-const isPaid = computed(() => view.value?.paymentStatus === "paid");
 </script>
 
 <template>
@@ -209,41 +188,47 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
       </button>
     </div>
 
-    <!-- A4 FAKTUR -->
     <div v-else-if="view && format === 'a4'" class="a4-paper print-target">
-      <div class="a4-header">
-        <div class="a4-header__left">
-          <p class="a4-merchant-name">{{ merchant.name }}</p>
-          <p class="a4-merchant-phone">{{ merchant.phone }}</p>
-        </div>
-        <div class="a4-header__right">
-          <table class="a4-meta">
-            <tr>
-              <td class="a4-meta__key">No. Transaksi</td>
-              <td class="a4-meta__sep">:</td>
-              <td class="a4-meta__val">{{ invoiceNo }}</td>
-            </tr>
-            <tr>
-              <td class="a4-meta__key">Tanggal</td>
-              <td class="a4-meta__sep">:</td>
-              <td class="a4-meta__val">{{ formatTanggal(view.createdAt) }}</td>
-            </tr>
-            <tr>
-              <td class="a4-meta__key">Pelanggan</td>
-              <td class="a4-meta__sep">:</td>
-              <td class="a4-meta__val">{{ view.customerName }}</td>
-            </tr>
-            <tr v-if="address">
-              <td class="a4-meta__key">Alamat</td>
-              <td class="a4-meta__sep">:</td>
-              <td class="a4-meta__val a4-meta__val--addr">{{ address }}</td>
-            </tr>
-          </table>
-        </div>
-      </div>
-
       <table class="a4-table">
         <thead>
+          <tr>
+            <th colspan="6" class="a4-head-band">
+              <div class="a4-header">
+                <div class="a4-header__left">
+                  <p class="a4-merchant-name">{{ merchant.name }}</p>
+                  <p class="a4-merchant-phone">{{ merchant.phone }}</p>
+                </div>
+                <div class="a4-header__right">
+                  <table class="a4-meta">
+                    <tr>
+                      <td class="a4-meta__key">No. Transaksi</td>
+                      <td class="a4-meta__sep">:</td>
+                      <td class="a4-meta__val">{{ invoiceNo }}</td>
+                    </tr>
+                    <tr>
+                      <td class="a4-meta__key">Tanggal</td>
+                      <td class="a4-meta__sep">:</td>
+                      <td class="a4-meta__val">
+                        {{ formatTanggal(view.createdAt) }}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="a4-meta__key">Pelanggan</td>
+                      <td class="a4-meta__sep">:</td>
+                      <td class="a4-meta__val">{{ view.customerName }}</td>
+                    </tr>
+                    <tr v-if="address">
+                      <td class="a4-meta__key">Alamat</td>
+                      <td class="a4-meta__sep">:</td>
+                      <td class="a4-meta__val a4-meta__val--addr">
+                        {{ address }}
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+              </div>
+            </th>
+          </tr>
           <tr>
             <th class="a4-th a4-th--desc">Description</th>
             <th class="a4-th a4-th--num">Total Item</th>
@@ -257,9 +242,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
           <tr v-for="item in view.items" :key="item.productId" class="a4-tr">
             <td class="a4-td">{{ item.productName }}</td>
             <td class="a4-td a4-td--center">{{ item.qty }}</td>
-            <td class="a4-td a4-td--center">
-              {{ (item.sku ?? "PC").split("-")[0] }}
-            </td>
+            <td class="a4-td a4-td--center">{{ item.sku ?? "PC" }}</td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.unitAmount) }}</td>
             <td class="a4-td a4-td--right">0,00</td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.lineTotal) }}</td>
@@ -269,49 +252,55 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
       <div class="a4-spacer" />
 
-      <div class="a4-footer">
-        <div class="a4-sigs">
-          <div class="a4-sig">
-            <p class="a4-sig__label">Pembeli</p>
-            <div class="a4-sig__space" />
-            <div class="a4-sig__line" />
+      <div class="a4-end">
+        <div class="a4-footer">
+          <div class="a4-sigs">
+            <div class="a4-sig">
+              <p class="a4-sig__label">Pembeli</p>
+              <div class="a4-sig__space" />
+              <div class="a4-sig__line" />
+            </div>
+            <div class="a4-sig">
+              <p class="a4-sig__label">Penjual</p>
+              <div class="a4-sig__space a4-sig__space--stamp"></div>
+              <div class="a4-sig__line" />
+            </div>
           </div>
-          <div class="a4-sig">
-            <p class="a4-sig__label">Penjual</p>
-            <div class="a4-sig__space a4-sig__space--stamp"></div>
-            <div class="a4-sig__line" />
+
+          <div class="a4-totals">
+            <div class="a4-total-row">
+              <span class="a4-total-label">Harga</span>
+              <span class="a4-total-sep">:</span>
+              <span class="a4-total-val">{{ fmtIDR(view.totalAmount) }}</span>
+            </div>
+            <div class="a4-total-row">
+              <span class="a4-total-label">Saldo</span>
+              <span class="a4-total-sep">:</span>
+              <span class="a4-total-val">{{ fmtIDR(saldo) }}</span>
+            </div>
+            <div class="a4-total-row">
+              <span class="a4-total-label">Discount</span>
+              <span class="a4-total-sep">:</span>
+              <span class="a4-total-val">0,00</span>
+            </div>
+            <div v-if="lastPaidAt" class="a4-total-row">
+              <span class="a4-total-label">Tgl Bayar</span>
+              <span class="a4-total-sep">:</span>
+              <span class="a4-total-val">{{ lastPaidAt }}</span>
+            </div>
+            <div class="a4-divider" />
+            <div class="a4-total-row a4-total-row--grand">
+              <span class="a4-total-label">Total</span>
+              <span class="a4-total-sep">:</span>
+              <span class="a4-total-val">{{ fmtIDR(grandTotal) }}</span>
+            </div>
           </div>
         </div>
 
-        <div class="a4-totals">
-          <div class="a4-total-row">
-            <span class="a4-total-label">Harga</span>
-            <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">{{ fmtIDR(view.totalAmount) }}</span>
-          </div>
-          <div class="a4-total-row">
-            <span class="a4-total-label">Saldo</span>
-            <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">{{ fmtIDR(saldo) }}</span>
-          </div>
-          <div class="a4-total-row">
-            <span class="a4-total-label">Discount</span>
-            <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">0,00</span>
-          </div>
-          <div class="a4-divider" />
-          <div class="a4-total-row a4-total-row--grand">
-            <span class="a4-total-label">Total</span>
-            <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">{{ fmtIDR(grandTotal) }}</span>
-          </div>
-        </div>
+        <div class="a4-bottom-note">{{ merchant.footerNote }}</div>
       </div>
-
-      <div class="a4-bottom-note">{{ merchant.footerNote }}</div>
     </div>
 
-    <!-- 80mm STRUK -->
     <div
       v-else-if="view && format === 'thermal'"
       class="thermal-paper print-target"
@@ -404,10 +393,20 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
     max-height: none !important;
     overflow: visible !important;
     box-shadow: none !important;
-    padding: 3mm 6mm !important;
+    padding: 0 6mm !important;
     margin: 0 !important;
-    display: block !important;
-    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .a4-table thead {
+    display: table-header-group;
+  }
+  .a4-tr,
+  .a4-td {
+    page-break-inside: avoid;
+  }
+  .a4-end {
+    page-break-inside: avoid;
   }
   .thermal-paper {
     box-shadow: none !important;
@@ -524,55 +523,38 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   font-size: 14px;
 }
 
-/* A4 */
+/* A4 — flowing multi-page, footer pinned to bottom of last slip */
 .a4-paper {
   width: 9.5in;
-  height: 5.5in;
-  max-height: 5.5in;
+  min-height: 5.5in;
   background: #fff;
-  padding: 3mm 6mm;
+  padding: 0 6mm;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
   font-family: Arial, "Helvetica Neue", sans-serif;
-  font-size: 10.5pt;
+  font-size: 10pt;
   color: #111;
   position: relative;
-  overflow: hidden;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
-.a4-spacer {
-  flex: 1 1 auto;
-  min-height: 4mm;
-}
-
-.a4-total-row--grand .a4-total-label,
-.a4-total-row--grand .a4-total-sep,
-.a4-total-row--grand .a4-total-val {
-  font-size: 14pt;
-  font-weight: 700;
-  color: #000;
-}
-.a4-total-row--grand .a4-total-val {
-  font-size: 15pt;
-}
-
 .a4-table {
-  margin-top: 4mm;
-}
-.a4-table thead th {
-  padding-bottom: 2.5mm;
-}
-.a4-table tbody tr:first-child td {
-  padding-top: 2.5mm;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
+.a4-head-band {
+  padding: 3mm 0 2mm;
+  border: none;
+  text-align: left;
+  font-weight: 400;
+}
 .a4-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 3mm;
   gap: 8mm;
 }
 .a4-header__left {
@@ -585,34 +567,20 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   flex: 1 1 0;
 }
 .a4-merchant-name {
-  font-size: 13pt;
+  font-size: 14pt;
   font-weight: 900;
   color: #000;
   margin: 0 0 0.5mm;
   letter-spacing: 0.03em;
 }
 .a4-merchant-phone {
-  font-size: 8.5pt;
+  font-size: 9pt;
   color: #333;
-  margin: 0 0 2mm;
-}
-
-.a4-transfer-stamp {
-  border: 2px solid #cc0000;
-  padding: 1.5mm 3mm;
-  display: inline-block;
-  color: #cc0000;
-  font-size: 8pt;
-  font-weight: 700;
-  line-height: 1.4;
-}
-.a4-transfer-stamp p {
   margin: 0;
 }
-
 .a4-meta {
   border-collapse: collapse;
-  font-size: 10.5pt;
+  font-size: 10pt;
   width: 100%;
 }
 .a4-meta__key {
@@ -620,47 +588,39 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   padding-right: 2mm;
   white-space: nowrap;
   vertical-align: top;
+  font-weight: 400;
 }
 .a4-meta__sep {
   padding: 0 1.5mm;
   color: #333;
   vertical-align: top;
+  font-weight: 400;
 }
 .a4-meta__val {
   color: #000;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.3;
 }
 .a4-meta__val--addr {
-  max-width: 70mm;
-  word-break: break-word;
-  font-size: 10pt;
+  font-size: 9.5pt;
   line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  word-break: break-word;
 }
 
-.a4-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
 .a4-th {
   background: #fff;
   color: #111;
   border-top: 1px solid #999;
   border-bottom: 1px solid #999;
-  padding: 1mm 1.5mm;
+  padding: 1.5mm 1.5mm;
   font-size: 10pt;
   font-weight: 700;
   text-align: center;
   white-space: nowrap;
 }
 .a4-th--desc {
-  width: auto;
   text-align: left;
+  width: auto;
 }
 .a4-th--num {
   width: 16mm;
@@ -678,35 +638,39 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   width: 36mm;
 }
 .a4-td {
-  padding: 1.5mm 1.5mm;
-  font-size: 10.5pt;
-  height: 9mm;
+  padding: 1.8mm 1.5mm;
+  font-size: 10pt;
+  height: 8.5mm;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
-  overflow: hidden;
   white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 .a4-td--center {
   text-align: center;
 }
 .a4-td--right {
-  white-space: nowrap;
+  text-align: right;
+  font-family: "Courier New", monospace;
   overflow: visible;
   text-overflow: clip;
 }
-.a4-tr--pad .a4-td {
-  border-bottom: 0.5px solid #eee;
-  height: 7mm;
+
+.a4-spacer {
+  flex: 1 1 auto;
+  min-height: 4mm;
 }
 
+.a4-end {
+  flex-shrink: 0;
+}
 .a4-footer {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-top: 2mm;
   border-top: 1px solid #999;
-  padding-top: 2mm;
+  padding-top: 3mm;
 }
 .a4-sigs {
   display: flex;
@@ -716,13 +680,13 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   width: 40mm;
 }
 .a4-sig__label {
-  font-size: 8.5pt;
+  font-size: 10pt;
   font-weight: 700;
   margin: 0 0 1mm;
   text-align: center;
 }
 .a4-sig__space {
-  height: 10mm;
+  height: 12mm;
   position: relative;
 }
 .a4-sig__space--stamp {
@@ -733,44 +697,18 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 .a4-sig__line {
   border-top: 1px solid #333;
 }
-.a4-watermark {
-  border: 2px solid rgba(37, 99, 235, 0.35);
-  border-radius: 50%;
-  width: 24mm;
-  height: 24mm;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  transform: rotate(-15deg);
-  position: absolute;
-  color: rgba(37, 99, 235, 0.4);
-}
-.a4-watermark__top {
-  font-size: 5.5pt;
-  font-weight: 700;
-  margin: 0;
-  letter-spacing: 0.05em;
-  text-align: center;
-}
-.a4-watermark__bot {
-  font-size: 9pt;
-  font-weight: 900;
-  margin: 0;
-  letter-spacing: 0.15em;
-}
 
 .a4-totals {
-  min-width: 58mm;
+  min-width: 62mm;
 }
 .a4-total-row {
   display: flex;
   align-items: baseline;
   padding: 0.6mm 0;
-  font-size: 10.5pt;
+  font-size: 10pt;
 }
 .a4-total-label {
-  width: 20mm;
+  width: 22mm;
   color: #333;
 }
 .a4-total-sep {
@@ -784,16 +722,26 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   font-weight: 500;
   color: #000;
 }
+.a4-total-row--grand .a4-total-label,
+.a4-total-row--grand .a4-total-sep,
+.a4-total-row--grand .a4-total-val {
+  font-size: 14pt;
+  font-weight: 700;
+  color: #000;
+}
+.a4-total-row--grand .a4-total-val {
+  font-size: 15pt;
+}
 .a4-divider {
   border-top: 1px solid #999;
   margin: 1mm 0;
 }
 
 .a4-bottom-note {
-  margin-top: 2mm;
+  margin-top: 3mm;
   padding-top: 2mm;
   border-top: 1px solid #999;
-  font-size: 7pt;
+  font-size: 8pt;
   color: #555;
   text-align: center;
   font-style: italic;
