@@ -48,6 +48,13 @@ const todayISO = () => {
   return new Date(d.getTime() - off).toISOString().slice(0, 10);
 };
 
+const formatPaidAt = (d: string) =>
+  new Date(d).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
 const paymentForm = reactive({
   method: "cash",
   amount: "",
@@ -612,6 +619,9 @@ const doAddPayment = async () => {
                     >{{ pay.method === "cash" ? "💵" : "🏦" }}
                     {{ pay.method }}</span
                   >
+                  <span class="payment-date">{{
+                    formatPaidAt(pay.paidAt)
+                  }}</span>
                   <span v-if="pay.senderName" class="payment-sender">{{
                     pay.senderName
                   }}</span>
@@ -1498,5 +1508,10 @@ const doAddPayment = async () => {
 .date-input:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.payment-date {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
 }
 </style>

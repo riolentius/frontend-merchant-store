@@ -189,46 +189,39 @@ const handlePrint = () => {
     </div>
 
     <div v-else-if="view && format === 'a4'" class="a4-paper print-target">
+      <div class="a4-header">
+        <div class="a4-header__left">
+          <p class="a4-merchant-name">{{ merchant.name }}</p>
+          <p class="a4-merchant-phone">{{ merchant.phone }}</p>
+        </div>
+        <div class="a4-header__right">
+          <table class="a4-meta">
+            <tr>
+              <td class="a4-meta__key">No. Transaksi</td>
+              <td class="a4-meta__sep">:</td>
+              <td class="a4-meta__val">{{ invoiceNo }}</td>
+            </tr>
+            <tr>
+              <td class="a4-meta__key">Tanggal</td>
+              <td class="a4-meta__sep">:</td>
+              <td class="a4-meta__val">{{ formatTanggal(view.createdAt) }}</td>
+            </tr>
+            <tr>
+              <td class="a4-meta__key">Pelanggan</td>
+              <td class="a4-meta__sep">:</td>
+              <td class="a4-meta__val">{{ view.customerName }}</td>
+            </tr>
+            <tr v-if="address">
+              <td class="a4-meta__key">Alamat</td>
+              <td class="a4-meta__sep">:</td>
+              <td class="a4-meta__val a4-meta__val--addr">{{ address }}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
       <table class="a4-table">
         <thead>
-          <tr>
-            <th colspan="6" class="a4-head-band">
-              <div class="a4-header">
-                <div class="a4-header__left">
-                  <p class="a4-merchant-name">{{ merchant.name }}</p>
-                  <p class="a4-merchant-phone">{{ merchant.phone }}</p>
-                </div>
-                <div class="a4-header__right">
-                  <table class="a4-meta">
-                    <tr>
-                      <td class="a4-meta__key">No. Transaksi</td>
-                      <td class="a4-meta__sep">:</td>
-                      <td class="a4-meta__val">{{ invoiceNo }}</td>
-                    </tr>
-                    <tr>
-                      <td class="a4-meta__key">Tanggal</td>
-                      <td class="a4-meta__sep">:</td>
-                      <td class="a4-meta__val">
-                        {{ formatTanggal(view.createdAt) }}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="a4-meta__key">Pelanggan</td>
-                      <td class="a4-meta__sep">:</td>
-                      <td class="a4-meta__val">{{ view.customerName }}</td>
-                    </tr>
-                    <tr v-if="address">
-                      <td class="a4-meta__key">Alamat</td>
-                      <td class="a4-meta__sep">:</td>
-                      <td class="a4-meta__val a4-meta__val--addr">
-                        {{ address }}
-                      </td>
-                    </tr>
-                  </table>
-                </div>
-              </div>
-            </th>
-          </tr>
           <tr>
             <th class="a4-th a4-th--desc">Description</th>
             <th class="a4-th a4-th--num">Total Item</th>
@@ -249,8 +242,6 @@ const handlePrint = () => {
           </tr>
         </tbody>
       </table>
-
-      <div class="a4-spacer" />
 
       <div class="a4-end">
         <div class="a4-footer">
@@ -395,11 +386,10 @@ const handlePrint = () => {
     box-shadow: none !important;
     padding: 0 6mm !important;
     margin: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
+    display: block !important;
   }
   .a4-table thead {
-    display: table-header-group;
+    display: table-row-group;
   }
   .a4-tr,
   .a4-td {
@@ -523,7 +513,7 @@ const handlePrint = () => {
   font-size: 14px;
 }
 
-/* A4 — flowing multi-page, footer pinned to bottom of last slip */
+/* A4 — flowing multi-page, footer follows content (block flow, never cuts) */
 .a4-paper {
   width: 9.5in;
   min-height: 5.5in;
@@ -535,8 +525,6 @@ const handlePrint = () => {
   color: #111;
   position: relative;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
 }
 
 .a4-table {
@@ -545,17 +533,13 @@ const handlePrint = () => {
   table-layout: fixed;
 }
 
-.a4-head-band {
-  padding: 3mm 0 2mm;
-  border: none;
-  text-align: left;
-  font-weight: 400;
-}
 .a4-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 8mm;
+  padding-top: 3mm;
+  margin-bottom: 2mm;
 }
 .a4-header__left {
   flex: 1 1 0;
@@ -657,13 +641,8 @@ const handlePrint = () => {
   text-overflow: clip;
 }
 
-.a4-spacer {
-  flex: 1 1 auto;
-  min-height: 4mm;
-}
-
 .a4-end {
-  flex-shrink: 0;
+  margin-top: 3mm;
 }
 .a4-footer {
   display: flex;
