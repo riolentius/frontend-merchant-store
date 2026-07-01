@@ -292,6 +292,12 @@ const doAddPayment = async () => {
     notifyWarn("Date required", "Please set the payment date.");
     return;
   }
+
+  const due = parseFloat(view.value?.balanceDue ?? "0");
+  if (parseFloat(paymentForm.amount) > due) {
+    paymentForm.amount = String(due);
+  }
+
   isSavingPayment.value = true;
   try {
     await $api(`/transactions/${id}/payments`, {
@@ -318,6 +324,14 @@ const doAddPayment = async () => {
     notifyError(err, "Failed to record payment");
   } finally {
     isSavingPayment.value = false;
+  }
+};
+
+const clampPaymentAmount = () => {
+  const amt = parseFloat(paymentForm.amount);
+  const due = parseFloat(view.value?.balanceDue ?? "0");
+  if (!isNaN(amt) && amt > due) {
+    paymentForm.amount = String(due);
   }
 };
 </script>
@@ -698,6 +712,7 @@ const doAddPayment = async () => {
                       min="0"
                       :placeholder="`Due: ${formatRupiah(view.balanceDue)}`"
                       fluid
+                      @blur="clampPaymentAmount"
                     />
                   </div>
                   <div class="field-group">

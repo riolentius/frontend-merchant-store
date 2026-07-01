@@ -243,6 +243,8 @@ const handlePrint = () => {
         </tbody>
       </table>
 
+      <div class="a4-spacer" />
+
       <div class="a4-end">
         <div class="a4-footer">
           <div class="a4-sigs">
@@ -386,7 +388,8 @@ const handlePrint = () => {
     box-shadow: none !important;
     padding: 0 6mm !important;
     margin: 0 !important;
-    display: block !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
   .a4-table thead {
     display: table-row-group;
@@ -525,6 +528,8 @@ const handlePrint = () => {
   color: #111;
   position: relative;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .a4-table {
@@ -641,8 +646,12 @@ const handlePrint = () => {
   text-overflow: clip;
 }
 
+.a4-spacer {
+  flex: 1 1 auto;
+  min-height: 4mm;
+}
 .a4-end {
-  margin-top: 3mm;
+  margin-top: 0;
 }
 .a4-footer {
   display: flex;
