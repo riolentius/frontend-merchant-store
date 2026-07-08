@@ -3,6 +3,9 @@ import type {
   Product,
   ProductPrice,
 } from "../../../../composables/useProducts";
+const { fetchMovements } = useStockMovements();
+const movements = ref<StockMovement[]>([]);
+const movLoading = ref(false);
 
 definePageMeta({ layout: "dashboard" });
 
@@ -35,6 +38,54 @@ onMounted(async () => {
     isLoading.value = false;
   }
 });
+
+const todayISO = () => {
+  const d = new Date();
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().slice(0, 10);
+};
+
+const monthAgoISO = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().slice(0, 10);
+};
+
+const filters = reactive({
+  from: monthAgoISO(),
+  to: todayISO(),
+  type: "" as "" | "in" | "out",
+});
+
+const loadMovements = async () => {
+  if (!product.value?.id) return;
+  movLoading.value = true;
+  try {
+    const res = await fetchMovements(product.value.id, {
+      from: filters.from || undefined,
+      to: filters.to || undefined,
+      type: filters.type || undefined,
+      limit: 100,
+    });
+    movements.value = res.items ?? [];
+  } catch (err) {
+    notifyError(err, "Failed to load stock history");
+  } finally {
+    movLoading.value = false;
+  }
+};
+
+onMounted(loadMovements);
+
+const fmtMovDate = (d: string) =>
+  new Date(d).toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 const catColor = (code: string) => {
   if (code === "REGULAR") return "#475569";
@@ -178,6 +229,95 @@ const doDelete = () => router.push("/admin/products");
               </div>
             </div>
           </FormSection>
+
+          <section class="panel stock-history">
+            <div class="stock-history__head">
+              <div>
+                <h2 class="panel-title">Stock History</h2>
+                <p class="panel-sub">Movements in and out of stock</p>
+              </div>
+            </div>
+
+            <div class="stock-filters">
+              <div class="filter-field">
+                <label>From</label>
+                <input
+                  v-model="filters.from"
+                  type="date"
+                  :max="filters.to"
+                  class="date-input"
+                />
+              </div>
+              <div class="filter-field">
+                <label>To</label>
+                <input
+                  v-model="filters.to"
+                  type="date"
+                  :max="todayISO()"
+                  class="date-input"
+                />
+              </div>
+              <div class="filter-field">
+                <label>Type</label>
+                <select v-model="filters.type" class="type-select">
+                  <option value="">All</option>
+                  <option value="in">Stock In</option>
+                  <option value="out">Stock Out</option>
+                </select>
+              </div>
+              <button
+                class="filter-apply"
+                :disabled="movLoading"
+                @click="loadMovements"
+              >
+                {{ movLoading ? "Loading…" : "Apply" }}
+              </button>
+            </div>
+
+            <div v-if="movLoading" class="stock-empty">Loading…</div>
+            <div v-else-if="!movements.length" class="stock-empty">
+              No movements in this range.
+            </div>
+            <table v-else class="stock-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th class="num">Qty</th>
+                  <th>Source</th>
+                  <th>Note / Ref</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="m in movements" :key="m.id">
+                  <td class="mov-date">{{ fmtMovDate(m.createdAt) }}</td>
+                  <td>
+                    <span
+                      class="mov-badge"
+                      :class="`mov-badge--${m.direction}`"
+                    >
+                      {{ m.direction === "in" ? "IN" : "OUT" }}
+                    </span>
+                  </td>
+                  <td
+                    class="num"
+                    :class="m.direction === 'in' ? 'qty-in' : 'qty-out'"
+                  >
+                    {{ m.direction === "in" ? "+" : "−" }}{{ m.quantity }}
+                  </td>
+                  <td class="mov-source">{{ m.source }}</td>
+                  <td class="mov-note">
+                    {{
+                      m.note ||
+                      (m.referenceId ? `Tx ${m.referenceId.slice(0, 8)}` : "—")
+                    }}
+                  </td>
+                  <td class="mov-by">{{ m.createdByEmail || "—" }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         </div>
 
         <!-- Summary -->
@@ -548,5 +688,145 @@ const doDelete = () => router.push("/admin/products");
   .summary-card {
     position: static;
   }
+}
+.stock-history {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px;
+}
+.stock-history__head {
+  margin-bottom: 16px;
+}
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+.panel-sub {
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 2px 0 0;
+}
+
+.stock-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-field label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #64748b;
+}
+.date-input,
+.type-select {
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+}
+.date-input:focus,
+.type-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.filter-apply {
+  padding: 8px 18px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.filter-apply:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.stock-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.stock-table td {
+  padding: 10px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+.stock-table .num {
+  text-align: right;
+  font-family: "Geist Mono", monospace;
+}
+.mov-date {
+  color: #64748b;
+  white-space: nowrap;
+}
+.mov-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.mov-badge--in {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+.mov-badge--out {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.qty-in {
+  color: #16a34a;
+  font-weight: 600;
+}
+.qty-out {
+  color: #dc2626;
+  font-weight: 600;
+}
+.mov-source {
+  text-transform: capitalize;
+  color: #64748b;
+}
+.mov-note {
+  color: #475569;
+}
+.mov-by {
+  color: #94a3b8;
+  font-size: 12px;
+}
+.stock-empty {
+  padding: 32px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
 }
 </style>
