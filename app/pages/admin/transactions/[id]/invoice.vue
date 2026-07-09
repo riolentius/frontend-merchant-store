@@ -368,15 +368,16 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
     gap: 0;
   }
   .a4-paper {
-    width: 9.5in !important;
+    width: 100% !important;
     height: 5.5in !important;
     max-height: 5.5in !important;
     overflow: hidden !important;
     box-shadow: none !important;
-    padding: 3mm 6mm !important;
+    padding: 2mm 4mm !important;
     margin: 0 !important;
     display: flex !important;
     flex-direction: column !important;
+    font-size: 11pt !important;
   }
   .thermal-paper {
     box-shadow: none !important;
