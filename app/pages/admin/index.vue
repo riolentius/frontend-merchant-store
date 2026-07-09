@@ -5,6 +5,48 @@ const { isLoading, stats, recentTransactions, lowStockProducts, topProducts } =
   useDashboard();
 
 const { canViewFinancials } = useAuth();
+const lowStockSearch = ref("");
+const lowStockSort = ref<"stock-asc" | "name">("stock-asc");
+const lowStockRenderCount = ref(15);
+
+const filteredLowStock = computed(() => {
+  const q = lowStockSearch.value.trim().toLowerCase();
+  let list = lowStockProducts.value;
+  if (q) {
+    list = list.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
+    );
+  }
+  // sort
+  list = [...list].sort(
+    (a, b) =>
+      lowStockSort.value === "name"
+        ? a.name.localeCompare(b.name)
+        : a.stock - b.stock, // lowest stock first
+  );
+  return list;
+});
+
+// lazy slice — only render what's scrolled into view
+const visibleLowStock = computed(() =>
+  filteredLowStock.value.slice(0, lowStockRenderCount.value),
+);
+
+const onLowStockScroll = (e: Event) => {
+  const el = e.target as HTMLElement;
+  // near bottom → render more
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+    if (lowStockRenderCount.value < filteredLowStock.value.length) {
+      lowStockRenderCount.value += 15;
+    }
+  }
+};
+
+// reset render count when the search/sort changes
+watch([lowStockSearch, lowStockSort], () => {
+  lowStockRenderCount.value = 15;
+});
 
 const statusClass = (status: string) => ({
   "badge-pending": status === "pending",
@@ -217,10 +259,36 @@ const barWidth = (qty: number) => {
               >Manage →</NuxtLink
             >
           </div>
+
+          <div class="stock-controls">
+            <div class="stock-search">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                v-model="lowStockSearch"
+                type="text"
+                placeholder="Search name or SKU…"
+              />
+            </div>
+            <select v-model="lowStockSort" class="stock-sort">
+              <option value="stock-asc">Lowest stock</option>
+              <option value="name">Name A–Z</option>
+            </select>
+          </div>
+
           <div v-if="isLoading" class="table-skeleton">
             <div v-for="i in 3" :key="i" class="table-skeleton-row" />
           </div>
-          <div v-else-if="lowStockProducts.length === 0" class="empty-state">
+          <div v-else-if="filteredLowStock.length === 0" class="empty-state">
             <svg
               width="24"
               height="24"
@@ -232,10 +300,14 @@ const barWidth = (qty: number) => {
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
               <polyline points="22 4 12 14.01 9 11.01" />
             </svg>
-            <span>All products are well stocked</span>
+            <span>{{
+              lowStockSearch ? "No matches" : "All products are well stocked"
+            }}</span>
           </div>
-          <div v-else class="stock-list">
-            <div v-for="p in lowStockProducts" :key="p.id" class="stock-item">
+
+          <!-- Fixed-height scroll list -->
+          <div v-else class="stock-scroll" @scroll="onLowStockScroll">
+            <div v-for="p in visibleLowStock" :key="p.id" class="stock-item">
               <div>
                 <p class="stock-name">{{ p.name }}</p>
                 <p class="stock-sku">{{ p.sku }}</p>

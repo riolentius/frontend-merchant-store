@@ -69,9 +69,6 @@ export const useDashboard = () => {
     }).format(n)
 
   const loadReal = async () => {
-    // Fetch dashboard summary and top products in parallel.
-    // Top products is a separate endpoint; we pull the top 20 once
-    // and let the 5/10/20 selector slice client-side.
     const [data, top] = await Promise.all([
       $api<DashboardResponse>('/dashboard'),
       $api<TopProductsResponse>('/dashboard/top-products?limit=20')
