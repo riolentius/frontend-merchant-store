@@ -386,7 +386,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   }
   @page {
     margin: 0;
-    size: 9.5in 5.5in;
+    size: auto;
   }
 }
 </style>
