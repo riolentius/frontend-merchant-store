@@ -369,15 +369,15 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   }
   .a4-paper {
     width: 100% !important;
-    height: 5.5in !important;
-    max-height: 5.5in !important;
-    overflow: hidden !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     box-shadow: none !important;
-    padding: 2mm 4mm !important;
+    padding: 6mm 6mm 4mm 4mm !important; /* top 6mm clears the cut; balanced sides */
     margin: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    font-size: 11pt !important;
+    display: block !important;
+    font-size: 11.5pt !important; /* bump up from 10pt */
   }
   .thermal-paper {
     box-shadow: none !important;
@@ -386,8 +386,8 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
     margin: 0 !important;
   }
   @page {
-    margin: 0;
     size: auto;
+    margin: 0mm; /* drop the margin-left: 8px */
   }
 }
 </style>
@@ -555,7 +555,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   flex: 1 1 0;
 }
 .a4-merchant-name {
-  font-size: 13pt;
+  font-size: 16pt;
   font-weight: 900;
   color: #000;
   margin: 0 0 0.5mm;
@@ -623,7 +623,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   border-top: 1px solid #999;
   border-bottom: 1px solid #999;
   padding: 1mm 1.5mm;
-  font-size: 8pt;
+  font-size: 11pt;
   font-weight: 700;
   text-align: center;
   white-space: nowrap;
@@ -648,7 +648,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 }
 .a4-td {
   padding: 1.5mm 1.5mm;
-  font-size: 8.5pt;
+  font-size: 11pt;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
   height: 6mm;
