@@ -22,7 +22,6 @@ interface Customer {
   categoryId?: string;
 }
 
-// ── Customer: existing vs new ─────────────────────────────
 const customerMode = ref<"existing" | "new">("existing");
 
 const customers = ref<Customer[]>([]);
@@ -63,7 +62,6 @@ const splitName = (full: string) => {
   return { firstName, lastName: lastName || undefined };
 };
 
-// Pricing is driven by whichever category is active right now.
 const activeCategoryId = computed(() =>
   customerMode.value === "new"
     ? (getCategoryIdByCode(newCustomer.categoryCode) ?? null)
@@ -99,12 +97,7 @@ watch(
 onMounted(async () => {
   await fetchCategories();
   try {
-    const [cRes, pRes] = await Promise.all([
-      $api<{ items: Customer[] }>("/customers"),
-      $api<{ items: Product[] }>("/products"),
-    ]);
-    customers.value = cRes.items ?? [];
-    products.value = (pRes.items ?? []).filter((p) => p.isActive);
+    const [, pRes] = await Promise.all([loadCustomers(), loadProducts()]);
 
     const map: Record<string, Record<string, string>> = {};
     for (const p of products.value) {
@@ -126,13 +119,44 @@ onMounted(async () => {
   }
 });
 
-const filteredCustomers = computed(() => {
-  const q = customerSearch.value.toLowerCase().trim();
-  if (!q) return customers.value;
-  return customers.value.filter((c) =>
-    `${c.firstName} ${c.lastName ?? ""}`.toLowerCase().includes(q),
-  );
+let customerTimer: ReturnType<typeof setTimeout>;
+
+watch(customerSearch, () => {
+  clearTimeout(customerTimer);
+
+  customerTimer = setTimeout(() => {
+    loadCustomers();
+  }, 350);
 });
+
+let productTimer: ReturnType<typeof setTimeout>;
+
+watch(productSearch, () => {
+  clearTimeout(productTimer);
+
+  productTimer = setTimeout(() => {
+    loadProducts();
+  }, 350);
+});
+
+const pickerProducts = computed(() => availableProducts.value);
+
+const loadCustomers = async () => {
+  const params = new URLSearchParams({
+    offset: "0",
+    limit: "20",
+  });
+
+  if (customerSearch.value.trim()) {
+    params.set("search", customerSearch.value.trim());
+  }
+
+  const res = await $api<{ items: Customer[] }>(
+    `/customers?${params.toString()}`,
+  );
+
+  customers.value = res.items ?? [];
+};
 
 const fullName = (c: Customer) =>
   [c.firstName, c.lastName].filter(Boolean).join(" ");
@@ -173,16 +197,43 @@ const availableProducts = computed(() =>
   ),
 );
 
-// Autocomplete: every token must appear in name+sku, any order.
-const pickerProducts = computed(() => {
-  const q = productSearch.value.toLowerCase().trim();
-  if (!q) return availableProducts.value;
-  const tokens = q.split(/\s+/);
-  return availableProducts.value.filter((p) => {
-    const hay = `${p.name} ${p.sku ?? ""}`.toLowerCase();
-    return tokens.every((t) => hay.includes(t));
+const loadProducts = async () => {
+  const params = new URLSearchParams({
+    offset: "0",
+    limit: "20",
   });
-});
+
+  if (productSearch.value.trim()) {
+    params.set("search", productSearch.value.trim());
+  }
+
+  const res = await $api<{ items: Product[] }>(
+    `/products?${params.toString()}`,
+  );
+
+  const items = (res.items ?? []).filter((p) => p.isActive);
+
+  products.value = items;
+
+  for (const p of items) {
+    if (priceMap.value[p.id]) continue;
+
+    priceMap.value[p.id] = {};
+
+    try {
+      const data = await apiFetch<any>(`/products/${p.id}/prices`);
+      const prices = Array.isArray(data) ? data : (data?.value ?? []);
+
+      for (const pr of prices) {
+        if (pr.categoryId) {
+          priceMap.value[p.id][pr.categoryId] = pr.amount;
+        }
+      }
+    } catch {
+      //
+    }
+  }
+};
 
 const openPicker = () => {
   productSearch.value = "";
@@ -323,7 +374,7 @@ const handleSave = async () => {
             />
             <div class="customer-grid">
               <div
-                v-for="c in filteredCustomers"
+                v-for="c in customers"
                 :key="c.id"
                 class="customer-card"
                 :class="{
