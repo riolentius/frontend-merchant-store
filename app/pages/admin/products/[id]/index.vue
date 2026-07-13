@@ -25,12 +25,8 @@ const showDeleteConfirm = ref(false);
 onMounted(async () => {
   await fetchCategories();
   try {
-    const res = await $api<{ items: Product[] }>("/products");
-    product.value = (res.items ?? []).find((p) => p.id === id) ?? null;
-    if (!product.value) {
-      notFound.value = true;
-      return;
-    }
+    const res = await $api<Product>(`/products/${id}`);
+    product.value = res;
     prices.value = await fetchPrices(id);
   } catch {
     notFound.value = true;
