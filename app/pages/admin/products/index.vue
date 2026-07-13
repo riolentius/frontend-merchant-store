@@ -121,14 +121,14 @@ const doDelete = () => {
               <th>SKU</th>
               <th>Stock</th>
               <th>Status</th>
-              <!-- Price columns per category -->
+              <!-- Price columns per category
               <th
                 v-for="cat in categories"
                 :key="cat.id"
                 :style="{ color: catColor(cat.code) }"
               >
                 {{ cat.name }}
-              </th>
+              </th> -->
               <th>Actions</th>
             </tr>
           </thead>
@@ -143,7 +143,7 @@ const doDelete = () => {
               <td class="td-sku">{{ p.sku ?? "—" }}</td>
               <td><StockBadge :stock="p.stockOnHand" /></td>
               <td><StatusBadge :active="p.isActive" /></td>
-              <td v-for="cat in categories" :key="cat.id" class="td-price">
+              <!-- <td v-for="cat in categories" :key="cat.id" class="td-price">
                 <span
                   v-if="getPriceAmount(p.id, cat.id)"
                   :style="{ color: catColor(cat.code) }"
@@ -151,7 +151,7 @@ const doDelete = () => {
                   {{ formatRupiah(getPriceAmount(p.id, cat.id)!) }}
                 </span>
                 <span v-else class="td-muted">—</span>
-              </td>
+              </td> -->
               <td>
                 <ActionButtons
                   @view="router.push(`/admin/products/${p.id}`)"
