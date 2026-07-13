@@ -15,7 +15,7 @@ const search = ref("");
 const filterStatus = ref<"all" | "active" | "inactive">("all");
 const showConfirm = ref(false);
 const deleteTarget = ref<string | null>(null);
-
+const sort = ref<"newest" | "oldest" | "alphabet">("newest");
 const page = ref(1);
 const limit = ref(50);
 const total = ref(0);
@@ -29,6 +29,7 @@ const load = async () => {
     const params = new URLSearchParams({
       offset: String((page.value - 1) * limit.value),
       limit: String(limit.value),
+      sort: sort.value,
     });
     if (search.value.trim()) params.set("search", search.value.trim());
     if (filterStatus.value !== "all") params.set("status", filterStatus.value);
@@ -60,6 +61,11 @@ onMounted(async () => {
 
 watch(page, load);
 watch(filterStatus, () => {
+  page.value = 1;
+  load();
+});
+
+watch(sort, () => {
   page.value = 1;
   load();
 });
@@ -122,6 +128,11 @@ const doDelete = () => {
       <template #toolbar>
         <div class="toolbar-left">
           <SearchInput v-model="search" placeholder="Search by name or SKU…" />
+          <select v-model="sort" class="sort-select">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="alphabet">Alphabetical</option>
+          </select>
           <div class="filter-tabs">
             <button
               v-for="f in ['all', 'active', 'inactive'] as const"

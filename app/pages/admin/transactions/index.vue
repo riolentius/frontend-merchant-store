@@ -15,7 +15,7 @@ const isEmpty = ref(false);
 const search = ref("");
 const filterStatus = ref;
 "all" | "draft" | "pending" | "completed" | ("cancelled" > "all");
-
+const sort = ref<"newest" | "oldest" | "alphabet">("newest");
 const page = ref(1);
 const limit = ref(50);
 const total = ref(0);
@@ -29,6 +29,7 @@ const load = async () => {
     const params = new URLSearchParams();
     params.set("offset", String((page.value - 1) * limit.value));
     params.set("limit", String(limit.value));
+    params.set("sort", sort.value);
 
     if (search.value.trim()) params.set("search", search.value.trim());
     if (filterStatus.value && filterStatus.value !== "all") {
@@ -65,6 +66,11 @@ watch(search, () => {
     page.value = 1;
     load();
   }, 350);
+});
+
+watch(sort, () => {
+  page.value = 1;
+  load();
 });
 </script>
 
@@ -116,6 +122,12 @@ watch(search, () => {
             v-model="search"
             placeholder="Search by transaction ID…"
           />
+
+          <select v-model="sort" class="sort-select">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="alphabet">Alphabetical</option>
+          </select>
           <div class="filter-tabs">
             <button
               v-for="f in [

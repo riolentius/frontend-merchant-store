@@ -14,7 +14,7 @@ interface Customer {
 const { $api } = useNuxtApp();
 const { fetchCategories, getCategoryName } = useCategories();
 const router = useRouter();
-
+const sort = ref<"newest" | "oldest" | "alphabet">("newest");
 const customers = ref<Customer[]>([]);
 const isLoading = ref(true);
 const search = ref("");
@@ -35,6 +35,7 @@ const load = async () => {
     const params = new URLSearchParams({
       offset: String((page.value - 1) * limit.value),
       limit: String(limit.value),
+      sort: sort.value,
     });
     if (search.value.trim()) params.set("search", search.value.trim());
 
@@ -57,6 +58,12 @@ onMounted(async () => {
 
 // page change → refetch
 watch(page, load);
+
+// sort change → reset to page 1, refetch server-side
+watch(sort, () => {
+  page.value = 1;
+  load();
+});
 
 // debounced search → reset to page 1, refetch server-side
 let searchTimer: ReturnType<typeof setTimeout>;
@@ -117,10 +124,18 @@ const formatDate = (d: string) =>
 
     <DataCard :loading="isLoading" :skeleton-rows="6">
       <template #toolbar>
-        <SearchInput
-          v-model="search"
-          placeholder="Search by name, email or phone…"
-        />
+        <div class="toolbar-left">
+          <SearchInput
+            v-model="search"
+            placeholder="Search by name, email or phone…"
+          />
+          <select v-model="sort" class="sort-select">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="alphabet">Alphabetical</option>
+          </select>
+        </div>
+
         <span>{{ total }} customers</span>
       </template>
 
@@ -311,5 +326,11 @@ const formatDate = (d: string) =>
 }
 .pager-info {
   font-variant-numeric: tabular-nums;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 </style>
