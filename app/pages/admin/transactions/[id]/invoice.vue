@@ -632,19 +632,19 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   text-align: left;
 }
 .a4-th--num {
-  width: 20mm;
+  width: 14mm;
 }
 .a4-th--sat {
-  width: 26mm;
+  width: 24mm;
 }
 .a4-th--price {
-  width: 28mm;
+  width: 30mm;
 }
 .a4-th--disc {
-  width: 26mm;
+  width: 16mm;
 }
 .a4-th--total {
-  width: 30mm;
+  width: 32mm;
 }
 .a4-td {
   padding: 1.8mm 3mm;
@@ -664,6 +664,9 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 .a4-td--right {
   text-align: right;
   font-family: "Courier New", monospace;
+  overflow: visible !important; /* beat the base .a4-td overflow: hidden */
+  text-overflow: clip !important;
+  white-space: nowrap !important;
 }
 .a4-tr--pad .a4-td {
   border-bottom: 0.5px solid #eee;
