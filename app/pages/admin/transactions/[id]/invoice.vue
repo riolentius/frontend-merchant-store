@@ -582,7 +582,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
 .a4-meta {
   border-collapse: collapse;
-  font-size: 8.5pt;
+  font-size: 9pt;
   width: 100%;
 }
 .a4-meta__key {
@@ -604,7 +604,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 .a4-meta__val--addr {
   max-width: 70mm;
   word-break: break-word;
-  font-size: 8pt;
+  font-size: 9pt;
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -626,22 +626,23 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   font-size: 11pt;
   font-weight: 700;
   text-align: center;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .a4-th--desc {
   text-align: left;
 }
 .a4-th--num {
-  width: 14mm;
+  width: 20mm;
 }
 .a4-th--sat {
-  width: 24mm;
+  width: 30mm;
 }
 .a4-th--price {
   width: 30mm;
 }
 .a4-th--disc {
-  width: 16mm;
+  width: 30mm;
 }
 .a4-th--total {
   width: 32mm;
