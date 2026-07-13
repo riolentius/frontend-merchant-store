@@ -4,7 +4,6 @@ import type { Transaction } from "../../../composables/useTransactions";
 definePageMeta({ layout: "dashboard" });
 
 const { canViewFinancials } = useAuth();
-
 const { $api } = useNuxtApp();
 const { formatRupiah, formatDate, statusColor, paymentStatusColor } =
   useTransactions();
@@ -14,44 +13,59 @@ const transactions = ref<Transaction[]>([]);
 const isLoading = ref(true);
 const isEmpty = ref(false);
 const search = ref("");
-const filterStatus = ref<
-  "all" | "draft" | "pending" | "completed" | "cancelled"
->("all");
+const filterStatus = ref;
+"all" | "draft" | "pending" | "completed" | ("cancelled" > "all");
 
-onMounted(async () => {
+const page = ref(1);
+const limit = ref(50);
+const total = ref(0);
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(total.value / limit.value)),
+);
+
+const load = async () => {
+  isLoading.value = true;
   try {
-    const res = await $api<{ items: Transaction[] }>("/transactions");
+    const params = new URLSearchParams();
+    params.set("offset", String((page.value - 1) * limit.value));
+    params.set("limit", String(limit.value));
+
+    if (search.value.trim()) params.set("search", search.value.trim());
+    if (filterStatus.value && filterStatus.value !== "all") {
+      params.set("status", filterStatus.value);
+    }
+
+    const res = await $api<{ items: Transaction[]; total: number }>(
+      `/transactions?${params.toString()}`,
+    );
     transactions.value = res.items ?? [];
+    total.value = res.total ?? 0;
+    isEmpty.value = total.value === 0;
   } catch (err: any) {
-    // Backend returns 500 when empty — treat as empty list
     transactions.value = [];
+    total.value = 0;
     isEmpty.value = true;
   } finally {
     isLoading.value = false;
   }
+};
+
+onMounted(load);
+
+watch(page, load);
+watch(filterStatus, () => {
+  page.value = 1;
+  load();
 });
 
-const filtered = computed(() => {
-  let list = transactions.value;
-  if (filterStatus.value !== "all")
-    list = list.filter((t) => t.status === filterStatus.value);
-  const q = search.value.toLowerCase().trim();
-  if (!q) return list;
-  return list.filter((t) => t.id.toLowerCase().includes(q));
+let searchTimer: ReturnType<typeof setTimeout>;
+watch(search, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    page.value = 1;
+    load();
+  }, 350);
 });
-
-// Summary stats
-const totalRevenue = computed(() =>
-  transactions.value
-    .filter((t) => t.status === "completed")
-    .reduce((s, t) => s + parseFloat(t.totalAmount), 0),
-);
-const pendingCount = computed(
-  () => transactions.value.filter((t) => t.status === "pending").length,
-);
-const draftCount = computed(
-  () => transactions.value.filter((t) => t.status === "draft").length,
-);
 </script>
 
 <template>
@@ -120,9 +134,7 @@ const draftCount = computed(
             </button>
           </div>
         </div>
-        <span class="record-count"
-          >{{ filtered.length }} of {{ transactions.length }}</span
-        >
+        <span>{{ total }} transactions</span>
       </template>
 
       <!-- Empty state -->
@@ -163,12 +175,12 @@ const draftCount = computed(
             </tr>
           </thead>
           <tbody>
-            <tr v-if="filtered.length === 0">
+            <tr v-if="transactions.length === 0">
               <td colspan="7" class="empty-row">
                 No transactions match filters
               </td>
             </tr>
-            <tr v-for="t in filtered" :key="t.id">
+            <tr v-for="t in transactions" :key="t.id">
               <td class="td-id">{{ t.id.slice(0, 8) }}…</td>
               <td class="td-customer">{{ t.customerName || "—" }}</td>
               <td class="td-muted">{{ t.items?.length ?? 0 }} item(s)</td>
@@ -189,6 +201,21 @@ const draftCount = computed(
             </tr>
           </tbody>
         </table>
+        <div class="pager">
+          <button class="pager-btn" :disabled="page <= 1" @click="page--">
+            ← Prev
+          </button>
+          <span class="pager-info"
+            >Page {{ page }} of {{ totalPages }} · {{ total }} total</span
+          >
+          <button
+            class="pager-btn"
+            :disabled="page >= totalPages"
+            @click="page++"
+          >
+            Next →
+          </button>
+        </div>
       </div>
     </DataCard>
   </div>
@@ -356,6 +383,33 @@ const draftCount = computed(
   text-align: center;
   color: #94a3b8;
   padding: 40px !important;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+.pager-btn {
+  padding: 7px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pager-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pager-info {
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 1100px) {
   .summary-strip {

@@ -16,12 +16,31 @@ const filterStatus = ref<"all" | "active" | "inactive">("all");
 const showConfirm = ref(false);
 const deleteTarget = ref<string | null>(null);
 
-onMounted(async () => {
-  await fetchCategories();
+const page = ref(1);
+const limit = ref(50);
+const total = ref(0);
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(total.value / limit.value)),
+);
+
+const load = async () => {
+  isLoading.value = true;
   try {
-    const res = await $api<{ items: Product[] }>("/products");
+    const params = new URLSearchParams({
+      offset: String((page.value - 1) * limit.value),
+      limit: String(limit.value),
+    });
+    if (search.value.trim()) params.set("search", search.value.trim());
+    if (filterStatus.value !== "all") params.set("status", filterStatus.value);
+
+    const res = await $api<{ items: Product[]; total: number }>(
+      `/products?${params.toString()}`,
+    );
     products.value = res.items ?? [];
-    // Fetch prices for each product
+    total.value = res.total ?? 0;
+
+    // prices only for the current page — not the whole catalog
+    priceMap.value = {};
     await Promise.all(
       products.value.map(async (p) => {
         priceMap.value[p.id] = await fetchPrices(p.id);
@@ -32,20 +51,28 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
+};
+
+onMounted(async () => {
+  await fetchCategories();
+  await load();
 });
 
-const filtered = computed(() => {
-  let list = products.value;
-  if (filterStatus.value === "active") list = list.filter((p) => p.isActive);
-  if (filterStatus.value === "inactive") list = list.filter((p) => !p.isActive);
-  const q = search.value.toLowerCase().trim();
-  if (!q) return list;
-  return list.filter(
-    (p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q),
-  );
+watch(page, load);
+watch(filterStatus, () => {
+  page.value = 1;
+  load();
 });
 
-// Get price amount for a product + category
+let searchTimer: ReturnType<typeof setTimeout>;
+watch(search, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    page.value = 1;
+    load();
+  }, 350);
+});
+
 const getPriceAmount = (
   productId: string,
   categoryId: string,
@@ -61,7 +88,6 @@ const confirmDelete = (id: string) => {
 };
 
 const doDelete = () => {
-  // TODO: DELETE /products/:id when backend supports it
   products.value = products.value.filter((p) => p.id !== deleteTarget.value);
   showConfirm.value = false;
   deleteTarget.value = null;
@@ -108,9 +134,7 @@ const doDelete = () => {
             </button>
           </div>
         </div>
-        <span class="record-count"
-          >{{ filtered.length }} of {{ products.length }} products</span
-        >
+        <span>{{ total }} products</span>
       </template>
 
       <div class="table-wrap">
@@ -133,12 +157,12 @@ const doDelete = () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="filtered.length === 0">
+            <tr v-if="products.length === 0">
               <td :colspan="5 + categories.length" class="empty-row">
                 No products found
               </td>
             </tr>
-            <tr v-for="p in filtered" :key="p.id">
+            <tr v-for="p in products" :key="p.id">
               <td class="td-name">{{ p.name }}</td>
               <td class="td-sku">{{ p.sku ?? "—" }}</td>
               <td><StockBadge :stock="p.stockOnHand" /></td>
@@ -162,6 +186,21 @@ const doDelete = () => {
             </tr>
           </tbody>
         </table>
+        <div class="pager">
+          <button class="pager-btn" :disabled="page <= 1" @click="page--">
+            ← Prev
+          </button>
+          <span class="pager-info"
+            >Page {{ page }} of {{ totalPages }} · {{ total }} total</span
+          >
+          <button
+            class="pager-btn"
+            :disabled="page >= totalPages"
+            @click="page++"
+          >
+            Next →
+          </button>
+        </div>
       </div>
     </DataCard>
 
@@ -321,5 +360,32 @@ function catColor(code: string): string {
   text-align: center;
   color: #94a3b8;
   padding: 40px !important;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+.pager-btn {
+  padding: 7px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pager-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pager-info {
+  font-variant-numeric: tabular-nums;
 }
 </style>

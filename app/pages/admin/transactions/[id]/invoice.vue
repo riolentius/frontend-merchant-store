@@ -398,7 +398,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   background: #e2e8f0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch; /* was center — stretch lets children scroll, doesn't clip */
   padding-bottom: 48px;
   gap: 20px;
 }
@@ -496,9 +496,9 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
 /* A4 */
 .a4-paper {
+  margin: 0 auto;
   width: 9.5in;
-  height: 5.5in;
-  max-height: 5.5in;
+  min-height: 5.5in;
   background: #fff;
   padding: 3mm 6mm;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);

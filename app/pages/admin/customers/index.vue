@@ -5,7 +5,7 @@ interface Customer {
   id: string;
   firstName: string;
   lastName?: string;
-  email: string;
+  email?: string; // ← made optional (migrated data has nulls — fixes the crash)
   phone?: string;
   categoryId?: string;
   createdAt: string;
@@ -21,27 +21,51 @@ const search = ref("");
 const showConfirm = ref(false);
 const deleteTarget = ref<string | null>(null);
 
-onMounted(async () => {
-  await fetchCategories();
+// server-side pagination state
+const page = ref(1);
+const limit = ref(50);
+const total = ref(0);
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(total.value / limit.value)),
+);
+
+const load = async () => {
+  isLoading.value = true;
   try {
-    const res = await $api<{ items: Customer[] }>("/customers");
+    const params = new URLSearchParams({
+      offset: String((page.value - 1) * limit.value),
+      limit: String(limit.value),
+    });
+    if (search.value.trim()) params.set("search", search.value.trim());
+
+    const res = await $api<{ items: Customer[]; total: number }>(
+      `/customers?${params.toString()}`,
+    );
     customers.value = res.items ?? [];
+    total.value = res.total ?? 0;
   } catch (err) {
     console.error("Failed to load customers:", err);
   } finally {
     isLoading.value = false;
   }
+};
+
+onMounted(async () => {
+  await fetchCategories();
+  await load();
 });
 
-const filtered = computed(() => {
-  const q = search.value.toLowerCase().trim();
-  if (!q) return customers.value;
-  return customers.value.filter(
-    (c) =>
-      `${c.firstName} ${c.lastName ?? ""}`.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q) ||
-      c.phone?.includes(q),
-  );
+// page change → refetch
+watch(page, load);
+
+// debounced search → reset to page 1, refetch server-side
+let searchTimer: ReturnType<typeof setTimeout>;
+watch(search, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    page.value = 1;
+    load();
+  }, 350);
 });
 
 const fullName = (c: Customer) =>
@@ -97,9 +121,7 @@ const formatDate = (d: string) =>
           v-model="search"
           placeholder="Search by name, email or phone…"
         />
-        <span class="record-count"
-          >{{ filtered.length }} of {{ customers.length }} customers</span
-        >
+        <span>{{ total }} customers</span>
       </template>
 
       <div class="table-wrap">
@@ -114,10 +136,10 @@ const formatDate = (d: string) =>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="filtered.length === 0">
+            <tr v-if="customers.length === 0">
               <td colspan="6" class="empty-row">No customers found</td>
             </tr>
-            <tr v-for="c in filtered" :key="c.id">
+            <tr v-for="c in customers" :key="c.id">
               <td class="td-name">{{ fullName(c) }}</td>
               <td class="td-muted">{{ c.email }}</td>
               <td class="td-mono">{{ c.phone ?? "—" }}</td>
@@ -132,6 +154,21 @@ const formatDate = (d: string) =>
             </tr>
           </tbody>
         </table>
+        <div class="pager">
+          <button class="pager-btn" :disabled="page <= 1" @click="page--">
+            ← Prev
+          </button>
+          <span class="pager-info"
+            >Page {{ page }} of {{ totalPages }} · {{ total }} total</span
+          >
+          <button
+            class="pager-btn"
+            :disabled="page >= totalPages"
+            @click="page++"
+          >
+            Next →
+          </button>
+        </div>
       </div>
     </DataCard>
 
@@ -246,5 +283,33 @@ const formatDate = (d: string) =>
   text-align: center;
   color: #94a3b8;
   padding: 40px !important;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+.pager-btn {
+  padding: 7px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pager-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pager-info {
+  font-variant-numeric: tabular-nums;
 }
 </style>
