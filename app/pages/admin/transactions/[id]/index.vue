@@ -4,7 +4,7 @@ import type { TransactionView } from "../../../../composables/useTransactions";
 definePageMeta({ layout: "dashboard" });
 
 const { notifyError, notifySuccess, notifyWarn } = useNotify();
-
+const { apiFetch } = useApiFetch();
 const { $api } = useNuxtApp();
 const {
   formatRupiah,
@@ -16,6 +16,9 @@ const {
 const route = useRoute();
 const router = useRouter();
 const id = route.params.id as string;
+const productQuery = ref("");
+const searchResults = ref<Product[]>([]);
+const isSearching = ref(false);
 
 interface EditItem {
   productId: string;
@@ -54,6 +57,73 @@ const formatPaidAt = (d: string) =>
     month: "short",
     year: "numeric",
   });
+
+const mergeProduct = (p: Product) => {
+  const idx = products.value.findIndex((x) => x.id === p.id);
+  if (idx === -1) products.value.push(p);
+  else products.value[idx] = p;
+};
+
+const loadPricesFor = async (p: Product) => {
+  if (priceMap.value[p.id]) return;
+  priceMap.value[p.id] = {};
+  try {
+    const data = await apiFetch<any>(`/products/${p.id}/prices`);
+    const prices = Array.isArray(data) ? data : (data?.value ?? []);
+    for (const pr of prices)
+      if (pr.categoryId) priceMap.value[p.id][pr.categoryId] = pr.amount;
+  } catch {}
+};
+
+const searchProducts = async () => {
+  const q = productQuery.value.trim();
+  if (q.length < 2) {
+    searchResults.value = [];
+    return;
+  }
+  isSearching.value = true;
+  try {
+    const res = await $api<{ items: Product[]; total: number }>(
+      `/products?search=${encodeURIComponent(q)}&limit=10&offset=0`,
+    );
+    const items = (res.items ?? []).filter((p) => p.isActive);
+    items.forEach(mergeProduct); // cache for stock caps
+    await Promise.all(items.map(loadPricesFor)); // prices for just these 10
+    searchResults.value = items;
+  } finally {
+    isSearching.value = false;
+  }
+};
+
+let prodTimer: ReturnType<typeof setTimeout>;
+watch(productQuery, () => {
+  clearTimeout(prodTimer);
+  prodTimer = setTimeout(searchProducts, 300);
+});
+
+// results eligible to add: not already a line, priced for this category, in stock
+const pickerResults = computed(() =>
+  searchResults.value.filter(
+    (p) =>
+      !editProductIds.value.has(p.id) &&
+      getPriceForCategory(p.id) !== null &&
+      availableStock(p) > 0,
+  ),
+);
+
+const pickProduct = (p: Product) => {
+  const price = getPriceForCategory(p.id);
+  if (!price) return;
+  editItems.value.push({
+    productId: p.id,
+    productName: p.name,
+    sku: p.sku,
+    unitAmount: price,
+    qty: 1,
+  });
+  productQuery.value = "";
+  searchResults.value = [];
+};
 
 const paymentForm = reactive({
   method: "cash",
@@ -134,11 +204,20 @@ const availableProducts = computed(() =>
 );
 
 const startEdit = async () => {
-  await loadProductsForEdit();
-  originalQty.value = Object.fromEntries(
-    (view.value?.items ?? []).map((i) => [i.productId, i.qty]),
+  const items = view.value?.items ?? [];
+  await Promise.all(
+    items.map(async (i) => {
+      if (products.value.some((p) => p.id === i.productId)) return;
+      try {
+        const p = await $api<Product>(`/products/${i.productId}`);
+        mergeProduct(p);
+      } catch {}
+    }),
   );
-  editItems.value = (view.value?.items ?? []).map((i) => ({
+  originalQty.value = Object.fromEntries(
+    items.map((i) => [i.productId, i.qty]),
+  );
+  editItems.value = items.map((i) => ({
     productId: i.productId,
     productName: i.productName,
     sku: i.sku,
@@ -544,25 +623,51 @@ const clampPaymentAmount = () => {
               </table>
 
               <div class="edit-add-row">
-                <select v-model="addPick" class="edit-add-select">
-                  <option value="" disabled>Add a product…</option>
-                  <option
-                    v-for="p in availableProducts"
-                    :key="p.id"
-                    :value="p.id"
+                <div class="prod-search">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
                   >
-                    {{ p.name }}{{ p.sku ? ` (${p.sku})` : "" }} —
-                    {{ formatRupiah(getPriceForCategory(p.id) ?? "0") }}
-                  </option>
-                </select>
-                <button
-                  type="button"
-                  class="btn-secondary"
-                  :disabled="!addPick"
-                  @click="addEditItem"
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    v-model="productQuery"
+                    type="text"
+                    placeholder="Search product by name or SKU…"
+                    class="prod-search__input"
+                  />
+                  <span v-if="isSearching" class="prod-search__spin">…</span>
+                </div>
+
+                <div
+                  v-if="productQuery.trim().length >= 2"
+                  class="prod-results"
                 >
-                  + Add
-                </button>
+                  <button
+                    v-for="p in pickerResults"
+                    :key="p.id"
+                    type="button"
+                    class="prod-result"
+                    @click="pickProduct(p)"
+                  >
+                    <span class="prod-result__name">{{ p.name }}</span>
+                    <span class="prod-result__meta">
+                      {{ p.sku ?? "—" }} · stok {{ availableStock(p) }} ·
+                      {{ formatRupiah(getPriceForCategory(p.id) ?? "0") }}
+                    </span>
+                  </button>
+                  <div
+                    v-if="!isSearching && pickerResults.length === 0"
+                    class="prod-result prod-result--empty"
+                  >
+                    No matching products for this customer's price category.
+                  </div>
+                </div>
               </div>
               <p v-if="availableProducts.length === 0" class="edit-hint">
                 No more products available for this customer's price category.
@@ -1528,5 +1633,99 @@ const clampPaymentAmount = () => {
   font-size: 12px;
   color: #64748b;
   font-weight: 500;
+}
+
+.edit-add-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  width: 100%; /* full width, not shrink-wrapped */
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #f1f5f9; /* separates it from the totals row */
+}
+.prod-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%; /* stretch across the panel */
+  padding: 10px 14px;
+  border: 1px dashed #cbd5e1; /* dashed = "add something here" affordance */
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #94a3b8;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.prod-search:focus-within {
+  border-style: solid;
+  border-color: #3b82f6;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.prod-search__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: #0f172a;
+  background: transparent;
+}
+
+.prod-search__input::placeholder {
+  color: #94a3b8;
+}
+.prod-search__spin {
+  font-size: 12px;
+}
+.prod-results {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-top: 6px;
+  background: #fff;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+.prod-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid #f8fafc;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.prod-result:hover {
+  background: #f8fafc;
+}
+.prod-result:last-child {
+  border-bottom: none;
+}
+.prod-result__name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #0f172a;
+}
+.prod-result__meta {
+  font-size: 12px;
+  color: #94a3b8;
+  font-family: "Geist Mono", monospace;
+}
+.prod-result--empty {
+  color: #94a3b8;
+  font-size: 12.5px;
+  cursor: default;
+}
+.prod-result--empty:hover {
+  background: #fff;
 }
 </style>
