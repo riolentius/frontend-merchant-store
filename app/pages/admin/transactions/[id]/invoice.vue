@@ -582,7 +582,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 
 .a4-meta {
   border-collapse: collapse;
-  font-size: 9pt;
+  font-size: 9.5pt;
   width: 100%;
 }
 .a4-meta__key {
@@ -623,7 +623,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   border-top: 1px solid #999;
   border-bottom: 1px solid #999;
   padding: 1.5mm 3mm;
-  font-size: 11pt;
+  font-size: 10pt;
   font-weight: 700;
   text-align: center;
   text-overflow: ellipsis;
@@ -649,7 +649,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 }
 .a4-td {
   padding: 1.8mm 3mm;
-  font-size: 11pt;
+  font-size: 10pt;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
   height: 6mm;
@@ -741,7 +741,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   display: flex;
   align-items: baseline;
   padding: 0.6mm 0;
-  font-size: 8.5pt;
+  font-size: 10pt;
 }
 .a4-total-label {
   width: 20mm;
@@ -767,7 +767,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   margin-top: 2mm;
   padding-top: 2mm;
   border-top: 1px solid #999;
-  font-size: 7pt;
+  font-size: 8.5pt;
   color: #555;
   text-align: center;
   font-style: italic;
