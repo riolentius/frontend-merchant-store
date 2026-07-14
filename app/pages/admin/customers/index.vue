@@ -14,7 +14,7 @@ interface Customer {
 const { $api } = useNuxtApp();
 const { fetchCategories, getCategoryName } = useCategories();
 const router = useRouter();
-const sort = ref<"newest" | "oldest" | "alphabet">("newest");
+const sort = ref<"newest" | "oldest" | "alphabet">("alphabet");
 const customers = ref<Customer[]>([]);
 const isLoading = ref(true);
 const search = ref("");
