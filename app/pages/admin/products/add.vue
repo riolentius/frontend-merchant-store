@@ -94,12 +94,14 @@ const errors = reactive({
 
 onMounted(async () => {
   await Promise.all([fetchCategories(), fetchProductCategories()]);
-  priceInputs.value = categories.value.map((c) => ({
-    categoryId: c.id,
-    categoryName: c.name,
-    code: c.code,
-    amount: "",
-  }));
+  priceInputs.value = categories.value
+    .filter((category) => category.code !== "WAREHOUSE")
+    .map((c) => ({
+      categoryId: c.id,
+      categoryName: c.name,
+      code: c.code,
+      amount: "",
+    }));
   errors.prices = categories.value.map(() => "");
 });
 

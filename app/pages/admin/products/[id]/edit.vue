@@ -42,39 +42,41 @@ const errors = reactive({ name: "", cost: "", prices: [] as string[] });
 
 onMounted(async () => {
   await fetchCategories();
+
   try {
-    const res = await $api<{ items: Product[] }>("/products");
-    const found = (res.items ?? []).find((p) => p.id === id);
-    if (!found) {
-      notFound.value = true;
-      return;
-    }
+    const found = await $api<Product>(`/products/${id}`);
+
+    form.name = found.name;
 
     // Parse existing SKU back into unit + suffix
     const skuParts = (found.sku ?? "").split("-");
     const knownUnit = SKU_UNITS.find((u) => u.code === skuParts[0]);
-    form.name = found.name;
+
     form.skuUnit = knownUnit ? skuParts[0] : "";
     form.skuSuffix =
       knownUnit && skuParts.length > 1
         ? skuParts.slice(1).join("-")
         : (found.sku ?? "");
+
     form.stockOnHand = found.stockOnHand;
     form.isActive = found.isActive;
     form.cost = found.cost ?? "0";
 
     const existing = await fetchPrices(id);
+
     priceInputs.value = categories.value.map((cat) => {
-      const p = existing.find((e) => e.categoryId === cat.id);
+      const price = existing.find((p) => p.categoryId === cat.id);
+
       return {
         categoryId: cat.id,
         categoryName: cat.name,
         code: cat.code,
-        amount: p?.amount ?? "",
-        priceId: p?.id,
+        amount: cat.code === "WAREHOUSE" ? "1" : (price?.amount ?? ""),
+        priceId: price?.id,
       };
     });
-    errors.prices = categories.value.map(() => "");
+
+    errors.prices = priceInputs.value.map(() => "");
   } catch {
     notFound.value = true;
   } finally {
@@ -95,6 +97,10 @@ const catColor = (code: string) => {
   if (code === "VIP") return "#854d0e";
   return "#475569";
 };
+
+const visiblePriceInputs = computed(() =>
+  priceInputs.value.filter((p) => p.code !== "WAREHOUSE"),
+);
 
 const validate = () => {
   errors.name = form.name.trim() ? "" : "Product name is required";
