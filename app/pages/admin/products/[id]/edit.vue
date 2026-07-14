@@ -106,9 +106,13 @@ const validate = () => {
   errors.name = form.name.trim() ? "" : "Product name is required";
   errors.cost =
     form.cost && parseFloat(form.cost) >= 0 ? "" : "Cost price is required";
-  errors.prices = priceInputs.value.map((p) =>
-    p.amount && parseFloat(p.amount) > 0 ? "" : "Price must be greater than 0",
-  );
+  errors.prices = priceInputs.value.map((p) => {
+    if (p.code === "WAREHOUSE") return "";
+
+    return p.amount && parseFloat(p.amount) > 0
+      ? ""
+      : "Price must be greater than 0";
+  });
   return !errors.name && !errors.cost && errors.prices.every((e) => !e);
 };
 
@@ -307,24 +311,24 @@ const margin = (sellingAmount: string) => {
               ><span>Preview</span><span>Margin</span>
             </div>
             <div
-              v-for="(p, i) in priceInputs"
-              :key="p.categoryId"
+              v-for="(price, index) in visiblePriceInputs"
+              :key="price.categoryId"
               class="price-row"
             >
               <div class="price-cat">
                 <span
                   class="price-cat__dot"
-                  :style="{ background: catColor(p.code) }"
+                  :style="{ background: catColor(price.code) }"
                 />
                 <span
                   class="price-cat__name"
-                  :style="{ color: catColor(p.code) }"
-                  >{{ p.categoryName }}</span
+                  :style="{ color: catColor(price.code) }"
+                  >{{ price.categoryName }}</span
                 >
               </div>
               <div class="field-group" style="margin: 0">
                 <InputText
-                  v-model="p.amount"
+                  v-model="price.amount"
                   type="number"
                   min="0"
                   fluid
@@ -334,9 +338,11 @@ const margin = (sellingAmount: string) => {
                   errors.prices[i]
                 }}</span>
               </div>
-              <span class="price-preview">{{ previewAmount(p.amount) }}</span>
-              <span v-if="margin(p.amount)" class="margin-badge"
-                >+{{ margin(p.amount) }}%</span
+              <span class="price-preview">{{
+                previewAmount(price.amount)
+              }}</span>
+              <span v-if="margin(price.amount)" class="margin-badge"
+                >+{{ margin(price.amount) }}%</span
               >
               <span v-else class="margin-empty">—</span>
             </div>
