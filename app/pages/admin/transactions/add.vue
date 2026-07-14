@@ -297,17 +297,31 @@ const handleSave = async () => {
       customerId = selectedCustomer.value!.id;
     }
 
-    await $api("/transactions", {
+    const tx = await $api<{ id: string }>("/transactions", {
       method: "POST",
       body: {
         customerId,
-        status: status.value,
-        notes: notes.value.trim() || undefined,
-        items: cart.value.map((i) => ({ productId: i.product.id, qty: i.qty })),
+        notes: notes.value || undefined,
+        items: cart.value.map((i) => ({
+          productId: i.product.id,
+          qty: i.qty,
+        })),
       },
     });
+
+    try {
+      await $api(`/transactions/${tx.id}/status`, {
+        method: "PATCH",
+        body: { status: "pending" },
+      });
+    } catch (err) {
+      notifyWarn(
+        "Created as draft",
+        "Transaction saved but couldn't be confirmed — confirm it manually on the detail page.",
+      );
+    }
     notifySuccess("Transaction created");
-    router.push("/admin/transactions");
+    router.push(`/admin/transactions/${tx.id}`);
   } catch (err) {
     notifyError(err, "Failed to create transaction");
   } finally {
