@@ -74,8 +74,7 @@ onMounted(async () => {
 
 const validate = () => {
   errors.firstName = form.firstName.trim() ? "" : "First name is required";
-  errors.email = form.email.trim() ? "" : "Email is required";
-  return !errors.firstName && !errors.email;
+  return !errors.firstName;
 };
 
 const handleSave = async () => {
@@ -88,7 +87,7 @@ const handleSave = async () => {
       body: {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim() || undefined,
-        email: form.email.trim(),
+        email: form.email || undefined,
         phone: form.phone.trim() || undefined,
         categoryId: categoryId || undefined,
       },
