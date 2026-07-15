@@ -123,7 +123,6 @@ const handleLogin = async () => {
                 id="email"
                 v-model="form.email"
                 type="email"
-                placeholder="admin@cahayagading.com"
                 :disabled="isLoading"
                 autocomplete="email"
                 fluid
@@ -139,7 +138,6 @@ const handleLogin = async () => {
                   id="password"
                   v-model="form.password"
                   :type="showPassword ? 'text' : 'password'"
-                  placeholder="••••••••"
                   :disabled="isLoading"
                   autocomplete="current-password"
                   fluid
