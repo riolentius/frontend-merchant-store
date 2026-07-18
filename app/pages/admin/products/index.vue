@@ -2,7 +2,7 @@
 import type { Product, ProductPrice } from "../../../composables/useProducts";
 
 definePageMeta({ layout: "dashboard" });
-
+const { notifyError, notifySuccess } = useNotify();
 const { $api } = useNuxtApp();
 const { fetchCategories, categories, getCategoryName } = useCategories();
 const { fetchPrices, formatRupiah } = useProducts();
@@ -93,10 +93,31 @@ const confirmDelete = (id: string) => {
   showConfirm.value = true;
 };
 
-const doDelete = () => {
-  products.value = products.value.filter((p) => p.id !== deleteTarget.value);
-  showConfirm.value = false;
-  deleteTarget.value = null;
+const isDeleting = ref(false);
+
+const doDelete = async () => {
+  if (!deleteTarget.value) return;
+  isDeleting.value = true;
+  try {
+    await $api(`/products/${deleteTarget.value}`, { method: "DELETE" });
+    notifySuccess("Product deleted");
+    await load();
+  } catch (err) {
+    notifyError(err, "Failed to delete product");
+  } finally {
+    isDeleting.value = false;
+    showConfirm.value = false;
+    deleteTarget.value = null;
+  }
+};
+
+const regularCategory = computed(() =>
+  categories.value.find((c) => c.code === "REGULAR"),
+);
+
+const regularPrice = (productId: string): string | null => {
+  if (!regularCategory.value) return null;
+  return getPriceAmount(productId, regularCategory.value.id);
 };
 </script>
 
@@ -164,6 +185,7 @@ const doDelete = () => {
               >
                 {{ cat.name }}
               </th> -->
+              <th>Price</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -178,15 +200,11 @@ const doDelete = () => {
               <td class="td-sku">{{ p.sku ?? "—" }}</td>
               <td><StockBadge :stock="p.stockOnHand" /></td>
               <td><StatusBadge :active="p.isActive" /></td>
-              <!-- <td v-for="cat in categories" :key="cat.id" class="td-price">
-                <span
-                  v-if="getPriceAmount(p.id, cat.id)"
-                  :style="{ color: catColor(cat.code) }"
-                >
-                  {{ formatRupiah(getPriceAmount(p.id, cat.id)!) }}
-                </span>
-                <span v-else class="td-muted">—</span>
-              </td> -->
+              <td class="td-price">
+                {{
+                  regularPrice(p.id) ? formatRupiah(regularPrice(p.id)!) : "—"
+                }}
+              </td>
               <td>
                 <ActionButtons
                   @view="router.push(`/admin/products/${p.id}`)"

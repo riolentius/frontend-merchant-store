@@ -22,6 +22,21 @@ const merchant = {
   footerNote:
     "BARANG YANG SUDAH LAMA DIBELI, TIDAK DAPAT DI TUKAR ATAU DI RETUR",
 };
+const printedAt = ref(new Date());
+
+const fmtPrintedAt = computed(() =>
+  printedAt.value.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }),
+);
+
+const refreshPrintedAt = () => {
+  printedAt.value = new Date();
+};
 
 onMounted(async () => {
   try {
@@ -46,11 +61,16 @@ onMounted(async () => {
         }
       } catch {}
     }
+    window.addEventListener("beforeprint", refreshPrintedAt);
   } catch {
     notFound.value = true;
   } finally {
     isLoading.value = false;
   }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeprint", refreshPrintedAt);
 });
 
 const invoiceNo = computed(() => {
@@ -83,6 +103,7 @@ const totalPaid = computed(() => parseFloat(view.value?.paidAmount ?? "0"));
 const saldo = computed(() => grandTotal.value - totalPaid.value);
 
 const handlePrint = () => {
+  refreshPrintedAt();
   const original = document.title;
   document.title = invoiceNo.value;
   window.print();
@@ -227,7 +248,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
         </thead>
         <tbody>
           <tr v-for="item in view.items" :key="item.productId" class="a4-tr">
-            <td class="a4-td">{{ item.productName }}</td>
+            <td class="a4-td a4-td--desc">{{ item.productName }}</td>
             <td class="a4-td a4-td--center">{{ item.qty }}</td>
             <td class="a4-td a4-td--center">{{ item.sku ?? "PC" }}</td>
             <td class="a4-td a4-td--right">{{ fmtIDR(item.unitAmount) }}</td>
@@ -278,7 +299,10 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
         </div>
       </div>
 
-      <div class="a4-bottom-note">{{ merchant.footerNote }}</div>
+      <div class="a4-bottom-note">
+        {{ merchant.footerNote
+        }}<span class="a4-printed-at">Dicetak: {{ fmtPrintedAt }}</span>
+      </div>
     </div>
 
     <!-- 80mm STRUK -->
@@ -649,10 +673,10 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 }
 .a4-td {
   padding: 1.8mm 3mm;
-  font-size: 10pt;
+  font-size: 9.5pt;
   border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
-  height: 6mm;
+  height: 8mm;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -661,6 +685,13 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   text-align: center;
   white-space: normal;
   word-break: break-all;
+}
+.a4-td--desc {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 9.5pt;
+  line-height: 1.25;
 }
 .a4-td--right {
   text-align: right;
@@ -904,5 +935,12 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   font-style: italic;
   margin: 2mm 0 0;
   line-height: 1.4;
+}
+.a4-printed-at {
+  display: block;
+  margin-top: 1mm;
+  font-size: 7pt;
+  color: #777;
+  font-style: normal;
 }
 </style>
