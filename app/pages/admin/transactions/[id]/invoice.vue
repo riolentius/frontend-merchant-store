@@ -29,8 +29,6 @@ const fmtPrintedAt = computed(() =>
     day: "2-digit",
     month: "short",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }),
 );
 
@@ -219,7 +217,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
             <tr>
               <td class="a4-meta__key">Tanggal</td>
               <td class="a4-meta__sep">:</td>
-              <td class="a4-meta__val">{{ formatTanggal(view.createdAt) }}</td>
+              <td class="a4-meta__val">{{ fmtPrintedAt }}</td>
             </tr>
             <tr>
               <td class="a4-meta__key">Pelanggan</td>
@@ -300,8 +298,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
       </div>
 
       <div class="a4-bottom-note">
-        {{ merchant.footerNote
-        }}<span class="a4-printed-at">Dicetak: {{ fmtPrintedAt }}</span>
+        {{ merchant.footerNote }}
       </div>
     </div>
 
