@@ -17,6 +17,7 @@ const navItems = [
       { label: "Payments", to: "/admin/payments", icon: "credit-card" },
       { label: "Customers", to: "/admin/customers", icon: "users" },
       { label: "Products", to: "/admin/products", icon: "package" },
+      { label: "Returns", to: "/admin/returns", icon: "tag" },
     ],
   },
 ];
