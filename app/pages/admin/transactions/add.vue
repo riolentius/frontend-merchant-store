@@ -985,22 +985,23 @@ const handleSave = async () => {
   align-items: center;
   gap: 7px;
   padding: 8px 14px;
-  background: #f8fafc;
-  border: 1.5px dashed #e2e8f0;
+  background: #2563eb;
+  border: none;
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 500;
-  color: #475569;
+  font-weight: 600;
+  color: #fff;
   cursor: pointer;
   font-family: inherit;
   transition:
     border-color 0.15s,
-    background 0.15s;
+    background 0.15s,
+    color 0.15s;
 }
 .add-item-btn:hover:not(:disabled) {
-  border-color: #3b82f6;
-  background: #eff6ff;
-  color: #2563eb;
+  border-color: #60a5fa;
+  background: #1d4ed8;
+  color: #1d4ed8;
 }
 .add-item-btn:disabled {
   opacity: 0.5;

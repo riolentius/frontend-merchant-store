@@ -237,10 +237,10 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
         <thead>
           <tr>
             <th class="a4-th a4-th--desc">Description</th>
-            <th class="a4-th a4-th--num">Total Item</th>
+            <th class="a4-th a4-th--num">Qty</th>
             <th class="a4-th a4-th--sat">Satuan</th>
-            <th class="a4-th a4-th--price">Harga Item</th>
-            <th class="a4-th a4-th--disc">Discount Item</th>
+            <th class="a4-th a4-th--price">Harga</th>
+            <th class="a4-th a4-th--disc">Discount</th>
             <th class="a4-th a4-th--total">Total Harga</th>
           </tr>
         </thead>
@@ -654,16 +654,16 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   text-align: left;
 }
 .a4-th--num {
-  width: 20mm;
+  width: 16mm;
 }
 .a4-th--sat {
-  width: 30mm;
+  width: 28mm;
 }
 .a4-th--price {
-  width: 30mm;
+  width: 28mm;
 }
 .a4-th--disc {
-  width: 30mm;
+  width: 28mm;
 }
 .a4-th--total {
   width: 32mm;
@@ -685,10 +685,13 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 }
 .a4-td--desc {
   white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  font-size: 9.5pt;
-  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 8pt;
+  line-height: 1.2;
 }
 .a4-td--right {
   text-align: right;
