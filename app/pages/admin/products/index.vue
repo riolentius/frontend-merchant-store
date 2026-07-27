@@ -7,7 +7,8 @@ const { $api } = useNuxtApp();
 const { fetchCategories, categories, getCategoryName } = useCategories();
 const { fetchPrices, formatRupiah } = useProducts();
 const router = useRouter();
-
+const { exportProducts } = useProductExport();
+const isExporting = ref(false);
 const products = ref<Product[]>([]);
 const priceMap = ref<Record<string, ProductPrice[]>>({});
 const isLoading = ref(true);
@@ -69,6 +70,19 @@ watch(sort, () => {
   page.value = 1;
   load();
 });
+
+const handleExport = async () => {
+  isExporting.value = true;
+  try {
+    // export respects the current search/filter, or omit to export all
+    await exportProducts({ search: search.value, status: filterStatus.value });
+    notifySuccess("Export berhasil diunduh");
+  } catch (err) {
+    notifyError(err, "Gagal export produk");
+  } finally {
+    isExporting.value = false;
+  }
+};
 
 let searchTimer: ReturnType<typeof setTimeout>;
 watch(search, () => {
@@ -165,6 +179,25 @@ const regularPrice = (productId: string): string | null => {
               {{ f.charAt(0).toUpperCase() + f.slice(1) }}
             </button>
           </div>
+          <button
+            class="btn-export"
+            :disabled="isExporting"
+            @click="handleExport"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            {{ isExporting ? "Menyiapkan…" : "Export Excel" }}
+          </button>
         </div>
         <span>{{ total }} products</span>
       </template>
@@ -416,5 +449,28 @@ function catColor(code: string): string {
 }
 .pager-info {
   font-variant-numeric: tabular-nums;
+}
+
+.btn-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #16a34a;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.btn-export:hover:not(:disabled) {
+  background: #dcfce7;
+}
+.btn-export:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

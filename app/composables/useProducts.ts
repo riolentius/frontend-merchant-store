@@ -1,3 +1,5 @@
+import * as XLSX from "xlsx";
+
 export interface Product {
   id:            string
   sku?:          string
@@ -17,6 +19,19 @@ export interface ProductPrice {
   validFrom:   string
   validTo?:    string
 }
+
+interface ExportProduct {
+  name: string;
+  sku: string;
+  cost: string;
+  priceRegular: string;
+  priceSpecial: string;
+  priceVip: string;
+  stockOnHand: number;
+  stockReserved: number;
+  isActive: boolean;
+}
+
 
 export const useProducts = () => {
   const { apiFetch } = useApiFetch()
@@ -75,3 +90,54 @@ export const useProducts = () => {
     updatePrice,
   }
 }
+
+export const useProductExport = () => {
+  const { $api } = useNuxtApp();
+
+  const exportProducts = async (opts?: { search?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.search) params.set("search", opts.search);
+    if (opts?.status && opts.status !== "all") params.set("status", opts.status);
+
+    const res = await $api<{ items: ExportProduct[] }>(
+      `/products/export?${params.toString()}`,
+    );
+    const items = res.items ?? [];
+
+    // map to spreadsheet rows with friendly headers + numeric types
+    const rows = items.map((p) => ({
+      "Nama Produk": p.name,
+      SKU: p.sku,
+      "Harga Modal": Number(p.cost),
+      "Harga Regular": Number(p.priceRegular),
+      "Harga Special": Number(p.priceSpecial),
+      "Harga VIP": Number(p.priceVip),
+      "Stok Tersedia": p.stockOnHand - p.stockReserved,
+      "Stok Fisik": p.stockOnHand,
+      "Stok Dipesan": p.stockReserved,
+      Status: p.isActive ? "Aktif" : "Nonaktif",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // column widths so it's readable, not cramped
+    ws["!cols"] = [
+      { wch: 32 },
+      { wch: 14 }, // SKU
+      { wch: 14 }, // Modal
+      { wch: 14 }, // Regular
+      { wch: 14 }, // Special
+      { wch: 14 }, // VIP
+      { wch: 12 }, // Tersedia
+      { wch: 10 }, // Fisik
+      { wch: 12 }, // Dipesan
+      { wch: 10 }, // Status
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Produk");
+    XLSX.writeFile(wb, `produk-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  return { exportProducts };
+};

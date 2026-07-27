@@ -15,7 +15,8 @@
     "primeflex": "^4.0.0",
     "primevue": "^4.3.7",
     "vue": "^3.5.18",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.5.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@primevue/nuxt-module": "^4.3.7"
