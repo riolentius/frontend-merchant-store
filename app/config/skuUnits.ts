@@ -13,7 +13,7 @@ export const SKU_UNITS: SkuUnit[] = [
   { code: 'SET',  label: 'SET',   description: 'Per set' },
   { code: 'GROSS',  label: 'GROSS',   description: 'Per gross' },
   { code: '1/2 GROSS',  label: '1/2 GROSS',   description: 'Per setengah gross' },
-
+  { code: 'LS',  label: 'LS',   description: 'Per lusin' },
 ]
  
 // Quick lookup by code
