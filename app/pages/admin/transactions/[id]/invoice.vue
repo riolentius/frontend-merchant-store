@@ -88,12 +88,9 @@ const formatTanggal = (d: string) =>
     year: "numeric",
   });
 
-const fmtIDR = (amount: string | number) => {
+const fmtIDR0 = (amount: string | number) => {
   const n = typeof amount === "string" ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat("id-ID", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n);
 };
 
 const grandTotal = computed(() => parseFloat(view.value?.totalAmount ?? "0"));
@@ -236,6 +233,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
       <table class="a4-table">
         <thead>
           <tr>
+            <th class="a4-th a4-th--no">No.</th>
             <th class="a4-th a4-th--desc">Description</th>
             <th class="a4-th a4-th--num">Qty</th>
             <th class="a4-th a4-th--sat">Satuan</th>
@@ -245,13 +243,18 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in view.items" :key="item.productId" class="a4-tr">
+          <tr
+            v-for="(item, idx) in view.items"
+            :key="item.productId"
+            class="a4-tr"
+          >
+            <td class="a4-td a4-td--no">{{ idx + 1 }}</td>
             <td class="a4-td a4-td--desc">{{ item.productName }}</td>
             <td class="a4-td a4-td--center">{{ item.qty }}</td>
             <td class="a4-td a4-td--center">{{ item.sku ?? "PC" }}</td>
-            <td class="a4-td a4-td--right">{{ fmtIDR(item.unitAmount) }}</td>
+            <td class="a4-td a4-td--right">{{ fmtIDR0(item.unitAmount) }}</td>
             <td class="a4-td a4-td--right">0,00</td>
-            <td class="a4-td a4-td--right">{{ fmtIDR(item.lineTotal) }}</td>
+            <td class="a4-td a4-td--right">{{ fmtIDR0(item.lineTotal) }}</td>
           </tr>
         </tbody>
       </table>
@@ -276,12 +279,12 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
           <div class="a4-total-row">
             <span class="a4-total-label">Harga</span>
             <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">{{ fmtIDR(view.totalAmount) }}</span>
+            <span class="a4-total-val">{{ fmtIDR0(view.totalAmount) }}</span>
           </div>
           <div class="a4-total-row">
             <span class="a4-total-label">Saldo</span>
             <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">{{ fmtIDR(saldo) }}</span>
+            <span class="a4-total-val">{{ fmtIDR0(saldo) }}</span>
           </div>
           <div class="a4-total-row">
             <span class="a4-total-label">Discount</span>
@@ -292,7 +295,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
           <div class="a4-total-row a4-total-row--grand">
             <span class="a4-total-label">Total</span>
             <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">{{ fmtIDR(grandTotal) }}</span>
+            <span class="a4-total-val">{{ fmtIDR0(grandTotal) }}</span>
           </div>
         </div>
       </div>
@@ -668,10 +671,18 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
 .a4-th--total {
   width: 32mm;
 }
+.a4-th--no {
+  width: 8mm;
+  text-align: left;
+}
+.a4-td--no {
+  text-align: left;
+  color: #333;
+  font-family: "Courier New", monospace;
+}
 .a4-td {
-  padding: 1.8mm 3mm;
+  padding: 1mm 3mm;
   font-size: 9.5pt;
-  border-bottom: 0.5px solid #ddd;
   vertical-align: middle;
   height: 8mm;
   overflow: hidden;
