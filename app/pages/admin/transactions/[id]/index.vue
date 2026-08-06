@@ -26,6 +26,7 @@ interface EditItem {
   sku?: string;
   unitAmount: string;
   qty: number;
+  discount: number; // per-unit discount in Rupiah
 }
 
 const view = ref<TransactionView | null>(null);
@@ -120,6 +121,7 @@ const pickProduct = (p: Product) => {
     sku: p.sku,
     unitAmount: price,
     qty: 1,
+    discount: 0,
   });
   productQuery.value = "";
   searchResults.value = [];
@@ -223,6 +225,7 @@ const startEdit = async () => {
     sku: i.sku,
     unitAmount: i.unitAmount,
     qty: i.qty,
+    discount: Number(i.discountAmount ?? 0),
   }));
   isEditing.value = true;
 };
@@ -248,6 +251,7 @@ const addEditItem = () => {
     sku: p.sku,
     unitAmount: price,
     qty: 1,
+    discount: 0,
   });
   addPick.value = "";
 };
@@ -266,10 +270,6 @@ const setQty = (i: number, qty: number) => {
   item.qty = next;
 };
 
-const editedTotal = computed(() =>
-  editItems.value.reduce((s, i) => s + parseFloat(i.unitAmount) * i.qty, 0),
-);
-
 // Payment consequence vs what's already been paid
 const paymentDelta = computed(() => {
   const paid = parseFloat(view.value?.paidAmount ?? "0");
@@ -279,6 +279,28 @@ const paymentDelta = computed(() => {
   if (diff < 0) return { kind: "over" as const, amount: -diff };
   return { kind: "settled" as const, amount: 0 };
 });
+
+const setDiscount = (i: number, d: number) => {
+  const item = editItems.value[i];
+  if (!item) return;
+  const unit = parseFloat(item.unitAmount);
+  let next = Number.isFinite(d) ? Math.max(0, Math.floor(d)) : 0;
+  if (next > unit) {
+    next = unit;
+    notifyWarn(
+      "Diskon terlalu besar",
+      "Diskon per item tidak boleh melebihi harga satuan.",
+    );
+  }
+  item.discount = next;
+};
+
+const lineSubtotal = (it: EditItem) =>
+  (parseFloat(it.unitAmount) - it.discount) * it.qty;
+
+const editedTotal = computed(() =>
+  editItems.value.reduce((s, i) => s + lineSubtotal(i), 0),
+);
 
 const saveItems = async () => {
   if (editItems.value.length === 0) return;
@@ -290,6 +312,7 @@ const saveItems = async () => {
         items: editItems.value.map((i) => ({
           productId: i.productId,
           qty: i.qty,
+          discount: i.discount,
         })),
       },
     });
@@ -533,6 +556,8 @@ const clampPaymentAmount = () => {
                   <th>Product</th>
                   <th>SKU</th>
                   <th>Unit Price</th>
+
+                  <th>Discount</th>
                   <th>Qty</th>
                   <th>Subtotal</th>
                 </tr>
@@ -544,13 +569,21 @@ const clampPaymentAmount = () => {
                   <td class="item-amount">
                     {{ formatRupiah(item.unitAmount) }}
                   </td>
+                  <td class="item-discount">
+                    {{
+                      Number(item.discountAmount ?? 0) > 0
+                        ? formatRupiah(Number(item.discountAmount))
+                        : "—"
+                    }}
+                  </td>
                   <td class="item-qty">× {{ item.qty }}</td>
+
                   <td class="item-total">{{ formatRupiah(item.lineTotal) }}</td>
                 </tr>
               </tbody>
               <tfoot>
                 <tr class="total-row">
-                  <td colspan="4" class="total-label">Grand Total</td>
+                  <td colspan="5" class="total-label">Grand Total</td>
                   <td class="total-val">
                     {{ formatRupiah(view.totalAmount) }}
                   </td>
@@ -566,6 +599,7 @@ const clampPaymentAmount = () => {
                     <th>Product</th>
                     <th>SKU</th>
                     <th>Unit Price</th>
+                    <th>Disc / item</th>
                     <th>Qty</th>
                     <th>Subtotal</th>
                     <th></th>
@@ -577,6 +611,18 @@ const clampPaymentAmount = () => {
                     <td class="item-sku">{{ it.sku ?? "—" }}</td>
                     <td class="item-amount">
                       {{ formatRupiah(it.unitAmount) }}
+                    </td>
+                    <td class="item-disc-edit">
+                      <span class="disc-prefix">Rp</span>
+                      <InputText
+                        :model-value="String(it.discount)"
+                        type="number"
+                        min="0"
+                        class="disc-input"
+                        @update:model-value="
+                          (v) => setDiscount(i, parseInt(v as string) || 0)
+                        "
+                      />
                     </td>
                     <td class="item-qty-edit">
                       <InputText
@@ -594,7 +640,7 @@ const clampPaymentAmount = () => {
                       >
                     </td>
                     <td class="item-total">
-                      {{ formatRupiah(parseFloat(it.unitAmount) * it.qty) }}
+                      {{ formatRupiah(lineSubtotal(it)) }}
                     </td>
                     <td class="item-remove">
                       <button
@@ -1727,5 +1773,23 @@ const clampPaymentAmount = () => {
 }
 .prod-result--empty:hover {
   background: #fff;
+}
+.item-disc-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.disc-prefix {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.disc-input {
+  width: 78px !important;
+}
+:deep(.disc-input.p-inputtext) {
+  padding: 6px 8px;
+  font-size: 13px;
+  text-align: right;
 }
 </style>

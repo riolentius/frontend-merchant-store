@@ -49,6 +49,7 @@ interface CartItem {
   product: Product;
   qty: number;
   unitPrice: string;
+  discount: number;
 }
 const cart = ref<CartItem[]>([]);
 const notes = ref("");
@@ -86,7 +87,6 @@ const setMode = (m: "existing" | "new") => {
   if (m === "new") selectedCustomer.value = null;
 };
 
-// Changing the new customer's category invalidates captured cart prices.
 watch(
   () => newCustomer.categoryCode,
   () => {
@@ -251,9 +251,30 @@ const addToCart = (product: Product) => {
     notifyWarn("Out of stock", `${product.name} has no available stock.`);
     return;
   }
-  cart.value.push({ product, qty: 1, unitPrice: price });
+  cart.value.push({ product, qty: 1, unitPrice: price, discount: 0 });
   closePicker();
 };
+
+const setDiscount = (i: number, d: number) => {
+  const item = cart.value[i];
+  const unit = parseFloat(item.unitPrice);
+  let next = Number.isFinite(d) ? Math.max(0, Math.floor(d)) : 0;
+  if (next > unit) {
+    next = unit; // discount can't exceed the unit price
+    notifyWarn(
+      "Diskon terlalu besar",
+      "Diskon per item tidak boleh melebihi harga satuan.",
+    );
+  }
+  item.discount = next;
+};
+
+const lineSubtotal = (item: CartItem) =>
+  (parseFloat(item.unitPrice) - item.discount) * item.qty;
+
+const grandTotal = computed(() =>
+  cart.value.reduce((s, i) => s + lineSubtotal(i), 0),
+);
 
 const removeFromCart = (i: number) => cart.value.splice(i, 1);
 const updateQty = (i: number, qty: number) => {
@@ -269,9 +290,6 @@ const updateQty = (i: number, qty: number) => {
   item.qty = next;
 };
 
-const grandTotal = computed(() =>
-  cart.value.reduce((s, i) => s + parseFloat(i.unitPrice) * i.qty, 0),
-);
 const canSave = computed(() => hasCustomer.value && cart.value.length > 0);
 
 const handleSave = async () => {
@@ -305,10 +323,10 @@ const handleSave = async () => {
         items: cart.value.map((i) => ({
           productId: i.product.id,
           qty: i.qty,
+          discount: String(i.discount),
         })),
       },
     });
-
     try {
       await $api(`/transactions/${tx.id}/status`, {
         method: "PATCH",
@@ -504,19 +522,31 @@ const handleSave = async () => {
         >
           <div v-if="cart.length > 0" class="cart-list">
             <div class="cart-header">
-              <span>Product</span><span>Unit Price</span><span>Qty</span
-              ><span>Subtotal</span><span />
+              <span>Product</span><span>Unit Price</span><span>Disc / item</span
+              ><span>Qty</span><span>Subtotal</span><span />
             </div>
             <div
+              class="cart-row"
               v-for="(item, i) in cart"
               :key="item.product.id"
-              class="cart-row"
             >
               <div>
                 <p class="cart-name">{{ item.product.name }}</p>
                 <p class="cart-sku">{{ item.product.sku ?? "—" }}</p>
               </div>
               <span class="cart-price">{{ formatRupiah(item.unitPrice) }}</span>
+              <div class="disc-control">
+                <span class="disc-prefix">Rp</span>
+                <InputText
+                  :model-value="String(item.discount)"
+                  type="number"
+                  min="0"
+                  class="disc-input"
+                  @update:model-value="
+                    (v) => setDiscount(i, parseInt(v as string) || 0)
+                  "
+                />
+              </div>
               <div class="qty-control">
                 <InputText
                   :model-value="String(item.qty)"
@@ -533,24 +563,14 @@ const handleSave = async () => {
                 >
               </div>
               <span class="cart-subtotal">{{
-                formatRupiah(parseFloat(item.unitPrice) * item.qty)
+                formatRupiah(lineSubtotal(item))
               }}</span>
               <button
                 type="button"
                 class="remove-btn"
                 @click="removeFromCart(i)"
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <!-- ×  icon -->
               </button>
             </div>
           </div>
@@ -895,7 +915,7 @@ const handleSave = async () => {
 }
 .cart-header {
   display: grid;
-  grid-template-columns: 1fr 120px 110px 120px 32px;
+  grid-template-columns: 1fr 110px 110px 100px 120px 32px;
   gap: 12px;
   padding: 8px 14px;
   background: #f8fafc;
@@ -907,11 +927,27 @@ const handleSave = async () => {
 }
 .cart-row {
   display: grid;
-  grid-template-columns: 1fr 120px 110px 120px 32px;
+  grid-template-columns: 1fr 110px 110px 100px 120px 32px;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
   border-top: 1px solid #f1f5f9;
+}
+.disc-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.disc-prefix {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.disc-input {
+  width: 72px !important;
+}
+:deep(.disc-input.p-inputtext) {
+  padding: 7px 8px;
+  font-size: 13px;
 }
 .cart-name {
   font-size: 13.5px;

@@ -45,13 +45,15 @@ export interface TransactionView {
 }
 
 export interface ViewItem {
-  productId:   string
-  sku?:        string
-  productName: string
-  qty:         number
-  unitAmount:  string
-  lineTotal:   string
-  packSize:    string
+  productId:      string
+  sku?:           string
+  productName:    string
+  qty:            number
+  unitAmount:     string
+  discountAmount: string
+  lineTotal:      string
+  packSize?:      string
+  stockProductId?: string
 }
 
 export interface ViewPay {

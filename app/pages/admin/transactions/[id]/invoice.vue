@@ -253,7 +253,9 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
             <td class="a4-td a4-td--center">{{ item.qty }}</td>
             <td class="a4-td a4-td--center">{{ item.sku ?? "PC" }}</td>
             <td class="a4-td a4-td--right">{{ fmtIDR0(item.unitAmount) }}</td>
-            <td class="a4-td a4-td--right">0,00</td>
+            <td class="a4-td a4-td--right">
+              {{ fmtIDR0(item.discountAmount) }}
+            </td>
             <td class="a4-td a4-td--right">{{ fmtIDR0(item.lineTotal) }}</td>
           </tr>
         </tbody>
@@ -286,10 +288,9 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
             <span class="a4-total-sep">:</span>
             <span class="a4-total-val">{{ fmtIDR0(saldo) }}</span>
           </div>
-          <div class="a4-total-row">
-            <span class="a4-total-label">Discount</span>
-            <span class="a4-total-sep">:</span>
-            <span class="a4-total-val">0,00</span>
+          <div v-if="parseFloat(view.totalDiscount ?? '0') > 0" class="thm-row">
+            <span>Discount</span
+            ><span>Rp {{ fmtThermal(view.totalDiscount) }}</span>
           </div>
           <div class="a4-divider" />
           <div class="a4-total-row a4-total-row--grand">
@@ -672,13 +673,8 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   width: 32mm;
 }
 .a4-th--no {
-  width: 8mm;
+  width: 10mm;
   text-align: left;
-}
-.a4-td--no {
-  text-align: left;
-  color: #333;
-  font-family: "Courier New", monospace;
 }
 .a4-td {
   padding: 1mm 3mm;
@@ -694,6 +690,15 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   white-space: normal;
   word-break: break-all;
 }
+.a4-td--no {
+  text-align: left;
+  color: #333;
+  font-family: "Courier New", monospace;
+  vertical-align: top;
+  font-size: 8pt;
+  line-height: 1.2;
+  padding-top: 1mm;
+}
 .a4-td--desc {
   white-space: normal;
   overflow: hidden;
@@ -703,6 +708,7 @@ const isPaid = computed(() => view.value?.paymentStatus === "paid");
   -webkit-box-orient: vertical;
   font-size: 8pt;
   line-height: 1.2;
+  vertical-align: top;
 }
 .a4-td--right {
   text-align: right;
