@@ -312,7 +312,7 @@ const saveItems = async () => {
         items: editItems.value.map((i) => ({
           productId: i.productId,
           qty: i.qty,
-          discount: i.discount,
+          discount: String(i.discount ?? 0),
         })),
       },
     });
