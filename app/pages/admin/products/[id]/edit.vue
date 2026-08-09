@@ -23,7 +23,8 @@ const form = reactive({
   name: "",
   skuUnit: "",
   skuSuffix: "",
-  stockOnHand: 0,
+  currentStock: 0,
+  stockToAdd: 0,
   isActive: true,
   cost: "",
 });
@@ -58,7 +59,8 @@ onMounted(async () => {
         ? skuParts.slice(1).join("-")
         : (found.sku ?? "");
 
-    form.stockOnHand = found.stockOnHand;
+    form.currentStock = found.stockOnHand;
+    form.stockToAdd = 0;
     form.isActive = found.isActive;
     form.cost = found.cost ?? "0";
 
@@ -127,7 +129,7 @@ const handleSave = async () => {
         sku: fullSku.value || undefined,
         cost: form.cost,
         isActive: form.isActive,
-        stockOnHand: form.stockOnHand,
+        stockOnHand: form.currentStock + form.stockToAdd,
       },
     });
     const toUpdate = priceInputs.value.filter((p) => p.priceId && p.amount);
@@ -253,12 +255,34 @@ const margin = (sellingAmount: string) => {
           <div class="field-row">
             <div class="field-group">
               <label class="field-label">Stock</label>
-              <InputText
-                v-model.number="form.stockOnHand"
-                type="number"
-                min="0"
-                fluid
-              />
+              <div class="stock-adjust">
+                <div class="stock-current">
+                  <span class="stock-current__label">Current</span>
+                  <span class="stock-current__val">{{
+                    form.currentStock
+                  }}</span>
+                </div>
+                <div class="stock-add">
+                  <span class="stock-add__label">Add stock</span>
+                  <InputText
+                    v-model.number="form.stockToAdd"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    class="stock-add__input"
+                  />
+                </div>
+                <!-- <div class="stock-result">
+                  <span class="stock-result__label">New total</span>
+                  <span class="stock-result__val">{{
+                    form.currentStock + (form.stockToAdd || 0)
+                  }}</span>
+                </div> -->
+              </div>
+              <span class="stock-hint">
+                Enter how many to <strong>add</strong> — current stock stays,
+                this is added on top.
+              </span>
             </div>
             <div class="field-group">
               <label class="field-label"
@@ -677,5 +701,53 @@ const margin = (sellingAmount: string) => {
   .margin-empty {
     display: none;
   }
+}
+.stock-adjust {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.stock-current,
+.stock-add,
+.stock-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stock-current__label,
+.stock-add__label,
+.stock-result__label {
+  font-size: 11px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stock-current__val {
+  font-size: 18px;
+  font-weight: 600;
+  color: #94a3b8; /* grayed out — read-only */
+  font-family: "Geist Mono", monospace;
+  padding: 8px 12px;
+  background: #f8fafc; /* muted fill signals read-only */
+  border-radius: 8px;
+  min-width: 80px;
+  text-align: center;
+}
+.stock-add__input {
+  width: 100px !important;
+}
+.stock-result__val {
+  font-size: 18px;
+  font-weight: 700;
+  color: #16a34a; /* green — the resulting total */
+  font-family: "Geist Mono", monospace;
+  padding: 8px 12px;
+  min-width: 80px;
+  text-align: center;
+}
+.stock-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 6px;
 }
 </style>

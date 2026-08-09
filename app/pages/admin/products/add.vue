@@ -4,7 +4,11 @@ import { SKU_UNITS } from "../../../config/skuUnits";
 definePageMeta({ layout: "dashboard" });
 
 const { $api } = useNuxtApp();
-const { fetchCategories, categories } = useCategories();
+const {
+  fetchCategories,
+  categories,
+  categories: allCategories,
+} = useCategories();
 const { createPrices, formatRupiah } = useProducts();
 const router = useRouter();
 const ZERO_ALLOWED_CODES = ["FREE"];
@@ -14,7 +18,7 @@ const {
   createProductCategory,
   normalize,
 } = useProductCategories();
-const { notifyError } = useNotify();
+const { notifyError, notifySuccess } = useNotify();
 const isLoading = ref(false);
 const showConfirmLeave = ref(false);
 
@@ -175,16 +179,21 @@ const handleSave = async () => {
         stockOnHand: form.stockOnHand,
       },
     });
-    await createPrices(
-      product.id,
-      priceInputs.value.map((p) => ({
-        categoryId: p.categoryId,
-        amount: p.amount,
-      })),
-    );
+
+    const prices = priceInputs.value
+      .filter((p) => p.amount)
+      .map((p) => ({ categoryId: p.categoryId, amount: p.amount }));
+
+    const warehouse = allCategories.value.find((c) => c.code === "WAREHOUSE");
+    if (warehouse && !prices.some((p) => p.categoryId === warehouse.id)) {
+      prices.push({ categoryId: warehouse.id, amount: "0" });
+    }
+
+    await createPrices(product.id, prices);
+    notifySuccess("Product created", `${form.name.trim()} has been added.`);
     router.push("/admin/products");
   } catch (err) {
-    console.error("Failed to create product:", err);
+    notifyError(err, "Failed to create product");
   } finally {
     isLoading.value = false;
   }
