@@ -516,3 +516,26 @@
     display: none; /* hide bar on narrow screens, keep name + qty */
   }
 }
+
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.clickable-row:hover td {
+  background: #f8fafc;
+}
+.stock-item--link,
+.top-row--link {
+  cursor: pointer;
+  transition: background 0.12s;
+  border-radius: 6px;
+  outline: none;
+}
+.stock-item--link:hover,
+.top-row--link:hover {
+  background: #f8fafc;
+}
+.stock-item--link:focus-visible,
+.top-row--link:focus-visible {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+}

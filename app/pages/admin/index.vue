@@ -5,6 +5,8 @@ const { isLoading, stats, recentTransactions, lowStockProducts, topProducts } =
   useDashboard();
 
 const { canViewFinancials } = useAuth();
+const router = useRouter();
+
 const lowStockSearch = ref("");
 const lowStockSort = ref<"stock-asc" | "name">("stock-asc");
 const lowStockRenderCount = ref(15);
@@ -19,11 +21,10 @@ const filteredLowStock = computed(() => {
     );
   }
   // sort
-  list = [...list].sort(
-    (a, b) =>
-      lowStockSort.value === "name"
-        ? a.name.localeCompare(b.name)
-        : a.stock - b.stock, // lowest stock first
+  list = [...list].sort((a, b) =>
+    lowStockSort.value === "name"
+      ? a.name.localeCompare(b.name)
+      : a.stock - b.stock,
   );
   return list;
 });
@@ -35,7 +36,6 @@ const visibleLowStock = computed(() =>
 
 const onLowStockScroll = (e: Event) => {
   const el = e.target as HTMLElement;
-  // near bottom → render more
   if (el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
     if (lowStockRenderCount.value < filteredLowStock.value.length) {
       lowStockRenderCount.value += 15;
@@ -43,10 +43,13 @@ const onLowStockScroll = (e: Event) => {
   }
 };
 
-// reset render count when the search/sort changes
 watch([lowStockSearch, lowStockSort], () => {
   lowStockRenderCount.value = 15;
 });
+
+const goToTransaction = (id: string) =>
+  router.push(`/admin/transactions/${id}`);
+const goToProduct = (id: string) => router.push(`/admin/products/${id}`);
 
 const statusClass = (status: string) => ({
   "badge-pending": status === "pending",
@@ -210,8 +213,13 @@ const barWidth = (qty: number) => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tx in recentTransactions" :key="tx.id">
-                <td class="td-id">#{{ tx.id }}</td>
+              <tr
+                v-for="tx in recentTransactions"
+                :key="tx.id"
+                class="clickable-row"
+                @click="goToTransaction(tx.id)"
+              >
+                <td class="td-id">#{{ tx.id.slice(0, 8) }}…</td>
                 <td class="td-customer">{{ tx.customer_name }}</td>
                 <td class="td-amount">{{ formatRupiah(tx.total) }}</td>
                 <td>
@@ -307,7 +315,15 @@ const barWidth = (qty: number) => {
 
           <!-- Fixed-height scroll list -->
           <div v-else class="stock-scroll" @scroll="onLowStockScroll">
-            <div v-for="p in visibleLowStock" :key="p.id" class="stock-item">
+            <div
+              v-for="p in visibleLowStock"
+              :key="p.id"
+              class="stock-item stock-item--link"
+              role="link"
+              tabindex="0"
+              @click="goToProduct(p.id)"
+              @keydown.enter="goToProduct(p.id)"
+            >
               <div>
                 <p class="stock-name">{{ p.name }}</p>
                 <p class="stock-sku">{{ p.sku }}</p>
@@ -454,7 +470,15 @@ const barWidth = (qty: number) => {
       </div>
 
       <div v-else class="top-list">
-        <div v-for="(p, i) in visibleTopProducts" :key="p.id" class="top-row">
+        <div
+          v-for="(p, i) in visibleTopProducts"
+          :key="p.id"
+          class="top-row top-row--link"
+          role="link"
+          tabindex="0"
+          @click="goToProduct(p.id)"
+          @keydown.enter="goToProduct(p.id)"
+        >
           <span class="top-rank">{{ i + 1 }}</span>
           <div class="top-info">
             <p class="top-name">{{ p.name }}</p>
@@ -476,4 +500,4 @@ const barWidth = (qty: number) => {
   </div>
 </template>
 
-<!-- No <style scoped> — all styles live in app/assets/css/dashboard-page.css -->
+<!-- Styles live in app/assets/css/dashboard-page.css — add the clickable-row / stock-item--link / top-row--link rules there -->

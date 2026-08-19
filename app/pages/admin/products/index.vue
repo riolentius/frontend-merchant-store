@@ -231,7 +231,7 @@ const regularPrice = (productId: string): string | null => {
             <tr v-for="p in products" :key="p.id">
               <td class="td-name">{{ p.name }}</td>
               <td class="td-sku">{{ p.sku ?? "—" }}</td>
-              <td><StockBadge :stock="p.stockOnHand" /></td>
+              <td><StockBadge :stock="p.stockOnHand - p.stockReserved" /></td>
               <td><StatusBadge :active="p.isActive" /></td>
               <td class="td-price">
                 {{
